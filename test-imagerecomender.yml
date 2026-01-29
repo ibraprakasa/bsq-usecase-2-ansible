@@ -1,0 +1,22 @@
+---
+- name: Collect GCP recommendations (summary + detailed by category)
+  hosts: localhost
+  gather_facts: false
+ 
+  vars:
+    project_id: "joey-preprod-project"
+    location: "global"
+    output_file: "/tmp/gcp_recommendations_aggregated.json"
+    recommenders: google.compute.image.IdleResourceRecommender
+ 
+  tasks:
+ 
+    - name: Run recommenders
+      command: >
+        gcloud recommender recommendations list
+        --project {{ project_id }}
+        --location {{ location }}
+        --recommender {{ recommenders }}
+        --format=json
+      register: recommender_calls
+      changed_when: false
