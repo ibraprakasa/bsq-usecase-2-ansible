@@ -43,26 +43,27 @@
       changed_when: false
       failed_when: false
 
-    - name: Build final recommendation report
+    - name: Build final recommendation report (safe JSON)
       copy:
         dest: "{{ output_file }}"
         content: |
-          {
-            "project": "{{ project_id }}",
-            "generated_at": "{{ lookup('pipe','date -Is') }}",
-            "recommendations": {
-            "idle_image": {{ idle_image.stdout | trim | default('[]', true) }},
-            "idle_disk": {{ idle_disk.stdout | trim | default('[]', true) }},
-            "vm_rightsizing": {{ vm_rightsizing.stdout | trim | default('[]', true) }}
-          }
-        }
-
+          {{
+            {
+              "project": project_id,
+              "generated_at": lookup('pipe','date -Is'),
+              "recommendations": {
+                "idle_image": (idle_image.stdout | default('[]') | from_json),
+                "idle_disk": (idle_disk.stdout | default('[]') | from_json),
+                "vm_rightsizing": (vm_rightsizing.stdout | default('[]') | from_json)
+              }
+            } | to_nice_json
+          }}
 
     - name: Export recommendation report as Job Artifact
       set_stats:
         data:
           gcp_usecase2_recommendation_report: "{{ lookup('file', output_file) }}"
 
-    - name: Show report location
+    - name: Confirm report exported
       debug:
-        msg: "Recommendation report generated and exported as Job Artifact"
+        msg: "Recommendation report successfully generated and exported as Job Artifact"
