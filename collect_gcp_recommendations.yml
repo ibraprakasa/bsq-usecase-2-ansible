@@ -1,0 +1,62 @@
+---
+- name: Use Case 2 - Collect GCP Cost Recommendations
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "joey-preprod-project"
+    location: "global"
+    output_file: "/tmp/gcp_usecase2_recommendation_report.json"
+
+  tasks:
+
+    - name: Get Idle Image recommendations
+      command: >
+        gcloud recommender recommendations list
+        --project {{ project_id }}
+        --location {{ location }}
+        --recommender google.compute.image.IdleResourceRecommender
+        --format=json
+      register: idle_image
+      changed_when: false
+      failed_when: false
+
+    - name: Get Idle Disk recommendations
+      command: >
+        gcloud recommender recommendations list
+        --project {{ project_id }}
+        --location {{ location }}
+        --recommender google.compute.disk.IdleResourceRecommender
+        --format=json
+      register: idle_disk
+      changed_when: false
+      failed_when: false
+
+    - name: Get VM Rightsizing recommendations
+      command: >
+        gcloud recommender recommendations list
+        --project {{ project_id }}
+        --location {{ location }}
+        --recommender google.compute.instance.MachineTypeRecommender
+        --format=json
+      register: vm_rightsizing
+      changed_when: false
+      failed_when: false
+
+    - name: Build final recommendation report
+      copy:
+        dest: "{{ output_file }}"
+        content: |
+          {
+            "project": "{{ project_id }}",
+            "generated_at": "{{ lookup('pipe','date -Is') }}",
+            "recommendations": {
+              "idle_image": {{ idle_image.stdout | default('[]') }},
+              "idle_disk": {{ idle_disk.stdout | default('[]') }},
+              "vm_rightsizing": {{ vm_rightsizing.stdout | default('[]') }}
+            }
+          }
+
+    - name: Show report location
+      debug:
+        msg: "Recommendation report generated at {{ output_file }}"
