@@ -1,5 +1,5 @@
 ---
-- name: Use Case 2 - Right-Sizer Watchdog (GCP Native Only)
+- name: Use Case 2 - Right-Sizer Watchdog (GCP Official & Safe)
   hosts: localhost
   gather_facts: false
 
@@ -11,71 +11,80 @@
   tasks:
 
   # =====================================================
-  # RECOMMENDER API (OFFICIAL & SUPPORTED)
+  # COLLECT RECOMMENDATIONS (OFFICIAL GCP AI)
   # =====================================================
 
-  - name: VM rightsizing recommendations
+  - name: Collect VM rightsizing recommendations
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
       --location {{ location }}
       --recommender google.compute.instance.MachineTypeRecommender
       --format=json
-    register: vm_rightsizing
-    failed_when: false
+    register: vm_rightsizing_raw
     changed_when: false
+    failed_when: false
 
-  - name: Idle image recommendations
+  - name: Collect idle image recommendations
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
       --location {{ location }}
       --recommender google.compute.image.IdleResourceRecommender
       --format=json
-    register: idle_image
-    failed_when: false
+    register: idle_image_raw
     changed_when: false
+    failed_when: false
 
-  - name: Idle persistent disk recommendations (includes GKE orphan disks)
+  - name: Collect idle disk recommendations
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
       --location {{ location }}
       --recommender google.compute.disk.IdleResourceRecommender
       --format=json
-    register: idle_disk
-    failed_when: false
+    register: idle_disk_raw
     changed_when: false
-
-  # =====================================================
-  # GKE CLUSTER INVENTORY (NO KUBECONFIG)
-  # =====================================================
-
-  - name: List GKE clusters
-    command: >
-      gcloud container clusters list
-      --project {{ project_id }}
-      --format=json
-    register: gke_clusters
     failed_when: false
-    changed_when: false
 
   # =====================================================
-  # SAFE NORMALIZATION
+  # SAFE JSON NORMALIZATION (NO PARSE ERROR)
   # =====================================================
 
-  - name: Normalize outputs
+  - name: Normalize recommendation outputs safely
     set_fact:
-      vm_rightsizing_json: "{{ vm_rightsizing.stdout | default('[]') | from_json }}"
-      idle_image_json: "{{ idle_image.stdout | default('[]') | from_json }}"
-      idle_disk_json: "{{ idle_disk.stdout | default('[]') | from_json }}"
-      gke_clusters_json: "{{ gke_clusters.stdout | default('[]') | from_json }}"
+      vm_rightsizing: >-
+        {{
+          (vm_rightsizing_raw.stdout | trim | length > 0)
+          | ternary(vm_rightsizing_raw.stdout | from_json, [])
+        }}
+      idle_images: >-
+        {{
+          (idle_image_raw.stdout | trim | length > 0)
+          | ternary(idle_image_raw.stdout | from_json, [])
+        }}
+      idle_disks: >-
+        {{
+          (idle_disk_raw.stdout | trim | length > 0)
+          | ternary(idle_disk_raw.stdout | from_json, [])
+        }}
+
+  # =====================================================
+  # SUMMARY (WHAT MANAGEMENT CARES ABOUT)
+  # =====================================================
+
+  - name: Build recommendation summary
+    set_fact:
+      summary:
+        vm_rightsizing_count: "{{ vm_rightsizing | length }}"
+        idle_image_count: "{{ idle_images | length }}"
+        idle_disk_count: "{{ idle_disks | length }}"
 
   # =====================================================
   # FINAL REPORT
   # =====================================================
 
-  - name: Build Right-Sizer Watchdog report
+  - name: Generate Right-Sizer Watchdog report
     copy:
       dest: "{{ report_file }}"
       content: |
@@ -83,25 +92,33 @@
           {
             "project": project_id,
             "generated_at": lookup('pipe','date -Is'),
-            "use_case": "Right-Sizer Watchdog (GCP Native)",
+            "use_case": "Right-Sizer Watchdog",
+            "summary": summary,
             "recommendations": {
-              "vm_rightsizing": vm_rightsizing_json,
-              "idle_images": idle_image_json,
-              "idle_disks": idle_disk_json
+              "vm_rightsizing": vm_rightsizing,
+              "idle_images": idle_images,
+              "idle_disks": idle_disks
             },
-            "gke_context": {
-              "clusters": gke_clusters_json,
-              "note": "PVC-level visibility requires kubeconfig and Kubernetes API access"
-            },
-            "explicit_limitations": [
-              "PVC objects are not accessible via gcloud",
-              "PVC idle metrics are not exposed via Recommender API",
-              "This automation is advisory, not destructive"
+            "notes": [
+              "Data source: GCP Recommender API (official)",
+              "PVC-level idle detection is not available via API",
+              "This report is advisory; no automatic changes applied"
             ]
           } | to_nice_json
         }}
 
-  - name: Export as AAP Job Artifact
+  # =====================================================
+  # EXPORT (AAP / CI)
+  # =====================================================
+
+  - name: Export report as job artifact
     set_stats:
       data:
         gcp_rightsizer_report: "{{ lookup('file', report_file) }}"
+
+  - name: Show summary
+    debug:
+      msg:
+        - "VM rightsizing recommendations: {{ summary.vm_rightsizing_count }}"
+        - "Idle images: {{ summary.idle_image_count }}"
+        - "Idle disks: {{ summary.idle_disk_count }}"
