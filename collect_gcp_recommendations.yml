@@ -57,6 +57,11 @@
             }
           }
 
+    - name: Export recommendation report as Job Artifact
+      set_stats:
+        data:
+          gcp_usecase2_recommendation_report: "{{ lookup('file', output_file) }}"
+
     - name: Show report location
       debug:
-        msg: "Recommendation report generated at {{ output_file }}"
+        msg: "Recommendation report generated and exported as Job Artifact"
