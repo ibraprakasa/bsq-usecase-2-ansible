@@ -1,18 +1,18 @@
 ---
-- name: Use Case 2 - Right-Sizer Watchdog (GCP)
+- name: Use Case 2 - Right-Sizer Watchdog (GCP Native Only)
   hosts: localhost
   gather_facts: false
 
   vars:
-    project_id: joey-preprod-project
-    location: global
-    report_file: /tmp/gcp_rightsizer_report.json
+    project_id: "joey-preprod-project"
+    location: "global"
+    report_file: "/tmp/gcp_rightsizer_report.json"
 
   tasks:
 
-  # =====================
-  # Recommender API
-  # =====================
+  # =====================================================
+  # RECOMMENDER API (OFFICIAL & SUPPORTED)
+  # =====================================================
 
   - name: VM rightsizing recommendations
     command: >
@@ -36,7 +36,7 @@
     failed_when: false
     changed_when: false
 
-  - name: Idle compute disk recommendations
+  - name: Idle persistent disk recommendations (includes GKE orphan disks)
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
@@ -47,9 +47,9 @@
     failed_when: false
     changed_when: false
 
-  # =====================
-  # GKE PVC (Metrics-based)
-  # =====================
+  # =====================================================
+  # GKE CLUSTER INVENTORY (NO KUBECONFIG)
+  # =====================================================
 
   - name: List GKE clusters
     command: >
@@ -60,18 +60,22 @@
     failed_when: false
     changed_when: false
 
-  - name: Collect PVC list (per cluster)
-    command: >
-      kubectl get pvc -A -o json
-    register: pvc_list
-    failed_when: false
-    changed_when: false
+  # =====================================================
+  # SAFE NORMALIZATION
+  # =====================================================
 
-  # =====================
-  # Final report
-  # =====================
+  - name: Normalize outputs
+    set_fact:
+      vm_rightsizing_json: "{{ vm_rightsizing.stdout | default('[]') | from_json }}"
+      idle_image_json: "{{ idle_image.stdout | default('[]') | from_json }}"
+      idle_disk_json: "{{ idle_disk.stdout | default('[]') | from_json }}"
+      gke_clusters_json: "{{ gke_clusters.stdout | default('[]') | from_json }}"
 
-  - name: Build consolidated report
+  # =====================================================
+  # FINAL REPORT
+  # =====================================================
+
+  - name: Build Right-Sizer Watchdog report
     copy:
       dest: "{{ report_file }}"
       content: |
@@ -79,18 +83,20 @@
           {
             "project": project_id,
             "generated_at": lookup('pipe','date -Is'),
-            "recommender_api": {
-              "vm_rightsizing": (vm_rightsizing.stdout | default('[]') | from_json),
-              "idle_image": (idle_image.stdout | default('[]') | from_json),
-              "idle_compute_disk": (idle_disk.stdout | default('[]') | from_json)
+            "use_case": "Right-Sizer Watchdog (GCP Native)",
+            "recommendations": {
+              "vm_rightsizing": vm_rightsizing_json,
+              "idle_images": idle_image_json,
+              "idle_disks": idle_disk_json
             },
-            "gke_analysis": {
-              "clusters": (gke_clusters.stdout | default('[]') | from_json),
-              "pvc_inventory": (pvc_list.stdout | default('{}') | from_json)
+            "gke_context": {
+              "clusters": gke_clusters_json,
+              "note": "PVC-level visibility requires kubeconfig and Kubernetes API access"
             },
-            "notes": [
-              "PVC idle detection requires Cloud Monitoring IO metrics",
-              "GKE PVC cost recommendations are not fully exposed via Recommender API"
+            "explicit_limitations": [
+              "PVC objects are not accessible via gcloud",
+              "PVC idle metrics are not exposed via Recommender API",
+              "This automation is advisory, not destructive"
             ]
           } | to_nice_json
         }}
