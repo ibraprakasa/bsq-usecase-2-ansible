@@ -10,9 +10,9 @@
 
   tasks:
 
-  # =====================================================
-  # COLLECT RECOMMENDATIONS (OFFICIAL GCP AI)
-  # =====================================================
+  # ================================
+  # COLLECT RECOMMENDATIONS (RAW)
+  # ================================
 
   - name: Collect VM rightsizing recommendations
     command: >
@@ -47,67 +47,31 @@
     changed_when: false
     failed_when: false
 
-  # =====================================================
-  # SAFE JSON NORMALIZATION (NO PARSE ERROR)
-  # =====================================================
+  # ================================
+  # BUILD REPORT (NO PARSING)
+  # ================================
 
-  - name: Normalize recommendation outputs safely
-    set_fact:
-      vm_rightsizing: "{{ vm_rightsizing_raw.stdout | default('[]') | from_json }}"
-      idle_images: "{{ idle_image_raw.stdout | default('[]') | from_json }}"
-      idle_disks: "{{ idle_disk_raw.stdout | default('[]') | from_json }}"
-
-
-  # =====================================================
-  # SUMMARY (WHAT MANAGEMENT CARES ABOUT)
-  # =====================================================
-
-  - name: Build recommendation summary
-    set_fact:
-      summary:
-        vm_rightsizing_count: "{{ vm_rightsizing | length }}"
-        idle_image_count: "{{ idle_images | length }}"
-        idle_disk_count: "{{ idle_disks | length }}"
-
-  # =====================================================
-  # FINAL REPORT
-  # =====================================================
-
-  - name: Generate Right-Sizer Watchdog report
+  - name: Build Right-Sizer Watchdog report (safe)
     copy:
       dest: "{{ report_file }}"
       content: |
-        {{
-          {
-            "project": project_id,
-            "generated_at": lookup('pipe','date -Is'),
-            "use_case": "Right-Sizer Watchdog",
-            "summary": summary,
-            "recommendations": {
-              "vm_rightsizing": vm_rightsizing,
-              "idle_images": idle_images,
-              "idle_disks": idle_disks
-            },
-            "notes": [
-              "Data source: GCP Recommender API (official)",
-              "PVC-level idle detection is not available via API",
-              "This report is advisory; no automatic changes applied"
-            ]
-          } | to_nice_json
-        }}
+        {
+          "project": "{{ project_id }}",
+          "generated_at": "{{ lookup('pipe','date -Is') }}",
+          "use_case": "Right-Sizer Watchdog (collect only)",
+          "recommendations": {
+            "vm_rightsizing": {{ vm_rightsizing_raw.stdout | default('[]') }},
+            "idle_images": {{ idle_image_raw.stdout | default('[]') }},
+            "idle_disks": {{ idle_disk_raw.stdout | default('[]') }}
+          },
+          "notes": [
+            "Data collected using official GCP Recommender API",
+            "No JSON parsing performed inside Ansible (safe for AAP)",
+            "Apply / resize actions must be a separate job"
+          ]
+        }
 
-  # =====================================================
-  # EXPORT (AAP / CI)
-  # =====================================================
-
-  - name: Export report as job artifact
+  - name: Export report as AAP Job Artifact
     set_stats:
       data:
         gcp_rightsizer_report: "{{ lookup('file', report_file) }}"
-
-  - name: Show summary
-    debug:
-      msg:
-        - "VM rightsizing recommendations: {{ summary.vm_rightsizing_count }}"
-        - "Idle images: {{ summary.idle_image_count }}"
-        - "Idle disks: {{ summary.idle_disk_count }}"
