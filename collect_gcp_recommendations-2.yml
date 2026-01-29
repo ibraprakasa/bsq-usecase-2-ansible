@@ -53,21 +53,10 @@
 
   - name: Normalize recommendation outputs safely
     set_fact:
-      vm_rightsizing: >-
-        {{
-          (vm_rightsizing_raw.stdout | trim | length > 0)
-          | ternary(vm_rightsizing_raw.stdout | from_json, [])
-        }}
-      idle_images: >-
-        {{
-          (idle_image_raw.stdout | trim | length > 0)
-          | ternary(idle_image_raw.stdout | from_json, [])
-        }}
-      idle_disks: >-
-        {{
-          (idle_disk_raw.stdout | trim | length > 0)
-          | ternary(idle_disk_raw.stdout | from_json, [])
-        }}
+      vm_rightsizing: "{{ vm_rightsizing_raw.stdout | default('[]') | from_json }}"
+      idle_images: "{{ idle_image_raw.stdout | default('[]') | from_json }}"
+      idle_disks: "{{ idle_disk_raw.stdout | default('[]') | from_json }}"
+
 
   # =====================================================
   # SUMMARY (WHAT MANAGEMENT CARES ABOUT)
