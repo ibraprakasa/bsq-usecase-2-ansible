@@ -51,11 +51,12 @@
             "project": "{{ project_id }}",
             "generated_at": "{{ lookup('pipe','date -Is') }}",
             "recommendations": {
-              "idle_image": {{ idle_image.stdout | default('[]') }},
-              "idle_disk": {{ idle_disk.stdout | default('[]') }},
-              "vm_rightsizing": {{ vm_rightsizing.stdout | default('[]') }}
-            }
+            "idle_image": {{ idle_image.stdout | trim | default('[]', true) }},
+            "idle_disk": {{ idle_disk.stdout | trim | default('[]', true) }},
+            "vm_rightsizing": {{ vm_rightsizing.stdout | trim | default('[]', true) }}
           }
+        }
+
 
     - name: Export recommendation report as Job Artifact
       set_stats:
