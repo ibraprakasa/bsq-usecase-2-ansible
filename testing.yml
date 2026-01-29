@@ -1,0 +1,13 @@
+---
+- name: testing
+  hosts: localhost
+  gather_facts: false
+  tasks:
+
+  - name: DEBUG identity used by gcloud
+    command: gcloud auth list
+    register: gcloud_identity
+    changed_when: false
+
+  - debug:
+      var: gcloud_identity.stdout
