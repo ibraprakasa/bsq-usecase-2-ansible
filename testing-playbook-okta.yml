@@ -1,0 +1,130 @@
+---
+- name: Collect GCP recommendations (summary + detailed by category)
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "joey-preprod-project"
+    location: "global"
+    output_file: "/tmp/gcp_recommendations_aggregated.json"
+
+    recommenders:
+      - google.compute.image.IdleResourceRecommender
+      - google.compute.disk.IdleResourceRecommender
+      - google.compute.instance.MachineTypeRecommender
+      - google.compute.instanceAvailability.Recommender
+      - google.compute.firewall.SecurityRecommender
+      - google.iam.policy.Recommender
+      - google.container.security.Recommender
+
+  tasks:
+
+    - name: Run recommenders
+      command: >
+        gcloud recommender recommendations list
+        --project {{ project_id }}
+        --location {{ location }}
+        --recommender {{ item }}
+        --format=json
+      loop: "{{ recommenders }}"
+      register: recommender_calls
+      changed_when: false
+      failed_when: false
+
+    - name: Aggregate all recommendations into one list
+      set_fact:
+        all_recommendations: >-
+          {{
+            all_recommendations | default([]) +
+            (
+              (item.stdout | trim | default('[]', true) | from_json)
+              | map('combine', {
+                  'recommender': item.item,
+                  'category': (
+                    item.primaryImpact.category
+                    if item.primaryImpact is defined
+                    else 'OTHER'
+                  )
+                })
+              | list
+            )
+          }}
+      loop: "{{ recommender_calls.results }}"
+      when: item.stdout is defined
+
+    - name: Normalize missing categories
+      set_fact:
+        all_recommendations: >-
+          {{
+            all_recommendations
+            | map('combine', {
+                'category': (
+                  item.category
+                  if item.category in ['COST','SECURITY','PERFORMANCE','RELIABILITY']
+                  else 'OTHER'
+                )
+              })
+            | list
+          }}
+      loop: "{{ all_recommendations }}"
+      loop_control:
+        loop_var: item
+
+    # =========================
+    # DEBUG (ONLY ALL IS NUMBER)
+    # =========================
+    - name: Show summary
+      debug:
+        msg:
+          ALL_RECOMMENDATIONS: "{{ all_recommendations | length }}"
+
+    # =========================
+    # FINAL REPORT (TEAMS READY)
+    # =========================
+    - name: Build final report
+      copy:
+        dest: "{{ output_file }}"
+        content: |
+          {{
+            {
+              "project": project_id,
+              "generated_at": lookup('pipe','date -Is'),
+
+              "summary": {
+                "all_recommendations": all_recommendations | length
+              },
+
+              "recommendations": {
+                "COST": (
+                  all_recommendations
+                  | selectattr('category','equalto','COST')
+                  | list
+                ),
+                "SECURITY": (
+                  all_recommendations
+                  | selectattr('category','equalto','SECURITY')
+                  | list
+                ),
+                "PERFORMANCE": (
+                  all_recommendations
+                  | selectattr('category','equalto','PERFORMANCE')
+                  | list
+                ),
+                "RELIABILITY": (
+                  all_recommendations
+                  | selectattr('category','equalto','RELIABILITY')
+                  | list
+                ),
+                "OTHER": (
+                  all_recommendations
+                  | selectattr('category','equalto','OTHER')
+                  | list
+                )
+              }
+            } | to_nice_json
+          }}
+
+    - name: Export result
+      set_stats:
+        data:
+          gcp_recommendations_aggregated: "{{ lookup('file', output_file) }}"
