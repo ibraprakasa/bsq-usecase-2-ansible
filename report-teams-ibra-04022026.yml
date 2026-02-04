@@ -106,7 +106,7 @@
           📊 **GCP Recommender Report**
           Project : {{ project_id }}
           Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
-
+    
           =========================
           SUMMARY
           =========================
@@ -114,28 +114,36 @@
           • Cost        : {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}
           • Security    : {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}
           • Performance : {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}
-
+          • Reliability : {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}
+    
           =========================
-          TOP COST FINDINGS
+          TOP 5 COST FINDINGS
           =========================
-          {% for r in sorted_recommendations
+          {% for r in (
+               sorted_recommendations
                | selectattr('category','equalto','COST')
                | list
-               | slice(0,5) %}
-          - [{{ r.priority }}][{{ r.location }}]
+             )[:5] %}
+          - 🔴 [{{ r.priority }}][{{ r.location }}]
             {{ r.description }}
+          {% else %}
+          - No COST findings
           {% endfor %}
-
+    
           =========================
-          TOP SECURITY FINDINGS
+          TOP 3 SECURITY FINDINGS
           =========================
-          {% for r in sorted_recommendations
+          {% for r in (
+               sorted_recommendations
                | selectattr('category','equalto','SECURITY')
                | list
-               | slice(0,3) %}
-          - [{{ r.priority }}]
+             )[:3] %}
+          - 🛡️ [{{ r.priority }}]
             {{ r.description }}
+          {% else %}
+          - No SECURITY findings
           {% endfor %}
+
 
     # =========================
     # SEND TO TEAMS
