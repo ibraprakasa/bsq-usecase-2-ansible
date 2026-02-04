@@ -98,18 +98,66 @@
       loop_control:
         loop_var: item
 
-    # =========================
+       # =========================
     # BUILD HUMAN READABLE MESSAGE
     # =========================
     - name: Build Teams message
       set_fact:
         teams_payload:
           text: |
-            🔍 **GCP Recommender Report**
-            Project: **{{ project_id }}**
+            🔍 GCP Recommender Report
+            Project: {{ project_id }}
             Generated: {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
 
-            📊 **Summary**
-            • Total: {{ all_recommendations | length }}
-            • Cost: {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}
-            • Security: {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}
+            ========================
+            SUMMARY
+            ========================
+            Total Recommendations : {{ all_recommendations | length }}
+            Cost                 : {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}
+            Security             : {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}
+            Performance          : {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}
+            Reliability          : {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}
+            Other                : {{ all_recommendations | selectattr('category','equalto','OTHER') | list | length }}
+
+            ========================
+            TOP FINDINGS (MAX 5)
+            ========================
+            {% if all_recommendations | length > 0 %}
+            {% for rec in all_recommendations[:5] %}
+            - {{ rec.description | default(rec.name, true) }}
+            {% endfor %}
+            {% else %}
+            No recommendations found.
+            {% endif %}
+
+    # =========================
+    # DEBUG (WAJIB ADA BIAR GA HALU)
+    # =========================
+    - name: Debug Teams payload (FINAL CHECK)
+      debug:
+        var: teams_payload
+
+    # =========================
+    # SEND TO TEAMS VIA POWER AUTOMATE
+    # =========================
+    - name: Send report to Microsoft Teams (Power Automate)
+      uri:
+        url: "{{ power_automate_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body: "{{ teams_payload }}"
+        status_code: 200
+      when: not test_mode
+      register: teams_response
+      failed_when: false
+
+    # =========================
+    # DEBUG RESPONSE
+    # =========================
+    - name: Debug Power Automate response
+      debug:
+        msg:
+          status: "{{ teams_response.status | default('no status') }}"
+          response: "{{ teams_response.content | default('no content') }}"
