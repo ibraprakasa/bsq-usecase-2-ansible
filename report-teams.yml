@@ -1,163 +1,40 @@
-- hosts: localhost
+- name: Send message to Microsoft Teams via Power Automate
+  hosts: localhost
   gather_facts: false
 
   vars:
     # =========================
-    # BASIC CONFIG
+    # HARDCODED POWER AUTOMATE URL
     # =========================
-    project_id: "joey-preprod-project"
-    location: "global"
+    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/94a679db1cd3403e82e75a8e1f0de0c7/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A0nYXR8b0pMuPINueyCynuAFw_VhCBR8sCticsENRlU"
 
-    # Power Automate Webhook URL
-    power_automate_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/c5d456ebe74b45a9ae67d576b6ee1711/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=Vzr-x7PSm-bZTIKFb430QB4d50UqfwP94Dvcp9Az8V0"
-
-    # Safety switch (true = NO Teams message)
-    test_mode: false
-
-    recommenders:
-      - google.compute.image.IdleResourceRecommender
-      - google.compute.disk.IdleResourceRecommender
-      - google.compute.instance.MachineTypeRecommender
-      - google.compute.instanceAvailability.Recommender
-      - google.compute.firewall.SecurityRecommender
-      - google.iam.policy.Recommender
-      - google.container.security.Recommender
+    # =========================
+    # MESSAGE CONTENT
+    # =========================
+    teams_message: >
+      🔍 GCP Recommender Report
+      Project : joey-preprod-project
+      Status  : OK
+      Time    : {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }}
 
   tasks:
 
-    # =========================
-    # AUTHENTICATION
-    # =========================
-    - name: Write GCP Service Account key
-      copy:
-        content: "{{ gcp_sa_key }}"
-        dest: /tmp/gcp-sa.json
-        mode: "0600"
-
-    - name: Activate service account
-      command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
-
-    - name: Verify gcloud auth
-      command: gcloud auth list
-      changed_when: false
-
-    # =========================
-    # COLLECT RECOMMENDATIONS
-    # =========================
-    - name: Run GCP Recommenders
-      command: >
-        gcloud recommender recommendations list
-        --project {{ project_id }}
-        --location {{ location }}
-        --recommender {{ item }}
-        --format=json
-      loop: "{{ recommenders }}"
-      register: recommender_calls
-      changed_when: false
-      failed_when: false
-
-    # =========================
-    # AGGREGATE RESULTS
-    # =========================
-    - name: Aggregate recommendations
-      set_fact:
-        all_recommendations: >-
-          {{
-            all_recommendations | default([]) +
-            (
-              (item.stdout | default('[]') | from_json)
-              | map('combine', {
-                  'recommender': item.item,
-                  'category': (
-                    item.primaryImpact.category
-                    if item.primaryImpact is defined
-                    else 'OTHER'
-                  )
-                })
-              | list
-            )
-          }}
-      loop: "{{ recommender_calls.results }}"
-      when: item.stdout is defined
-
-    - name: Normalize categories
-      set_fact:
-        all_recommendations: >-
-          {{
-            all_recommendations
-            | map('combine', {
-                'category': (
-                  item.category
-                  if item.category in ['COST','SECURITY','PERFORMANCE','RELIABILITY']
-                  else 'OTHER'
-                )
-              })
-            | list
-          }}
-      loop: "{{ all_recommendations }}"
-      loop_control:
-        loop_var: item
-
-       # =========================
-    # BUILD HUMAN READABLE MESSAGE
-    # =========================
-    - name: Build Teams message
-      set_fact:
-        teams_payload:
-          text: |
-            🔍 GCP Recommender Report
-            Project: {{ project_id }}
-            Generated: {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
-
-            ========================
-            SUMMARY
-            ========================
-            Total Recommendations : {{ all_recommendations | length }}
-            Cost                 : {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}
-            Security             : {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}
-            Performance          : {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}
-            Reliability          : {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}
-            Other                : {{ all_recommendations | selectattr('category','equalto','OTHER') | list | length }}
-
-            ========================
-            TOP FINDINGS (MAX 5)
-            ========================
-            {% if all_recommendations | length > 0 %}
-            {% for rec in all_recommendations[:5] %}
-            - {{ rec.description | default(rec.name, true) }}
-            {% endfor %}
-            {% else %}
-            No recommendations found.
-            {% endif %}
-
-    # =========================
-    # DEBUG (WAJIB ADA BIAR GA HALU)
-    # =========================
-    - name: Debug Teams payload (FINAL CHECK)
-      debug:
-        var: teams_payload
-
-    # =========================
-    # SEND TO TEAMS VIA POWER AUTOMATE
-    # =========================
-    - name: Send report to Microsoft Teams (Power Automate)
+    - name: Send message to Teams
       uri:
-        url: "{{ power_automate_webhook_url }}"
+        url: "{{ teams_webhook_url }}"
         method: POST
         headers:
           Content-Type: application/json
         body_format: json
-        body: "{{ teams_payload }}"
-        status_code: 200
-      when: not test_mode
-      register: teams_response
-      failed_when: false
+        body:
+          text: "{{ teams_message | trim }}"
+        status_code:
+          - 200
+          - 202
+      register: teams_result
 
-    # =========================
-    # DEBUG RESPONSE
-    # =========================
-    - name: Debug Power Automate response
+    - name: Show Teams response
       debug:
         msg:
-          status: "{{ teams_response.status | default('no status') }}"
-          response: "{{ teams_response.content | default('no content') }}"
+          - "Teams message sent"
+          - "HTTP status: {{ teams_result.status }}"
