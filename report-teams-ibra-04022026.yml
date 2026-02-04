@@ -80,7 +80,7 @@
   # =========================
   # AGGREGATE (FINAL FIX)
   # =========================
-  - name: Aggregate recommendations
+  - name: Aggregate recommendations (FINAL – stable text)
     set_fact:
       all_recommendations: >-
         {{
@@ -92,16 +92,19 @@
                 'location': item.item.0,
                 'category': recommender_category_map[item.item.1] | default('OTHER'),
                 'priority': item.priority | default('MEDIUM'),
+  
                 'description': (
                   item.description
                   if item.description is defined
                   else (
-                    item.content.overview.en
+                    item.content.operationGroups[0].operations[0].value
                     if item.content is defined
-                       and item.content.overview is defined
-                       and item.content.overview.en is defined
+                       and item.content.operationGroups is defined
+                       and item.content.operationGroups | length > 0
+                       and item.content.operationGroups[0].operations | length > 0
+                       and item.content.operationGroups[0].operations[0].value is defined
                     else
-                      'Recommendation detected (no summary text provided by API)'
+                      'Recommendation detected'
                   )
                 )
               })
