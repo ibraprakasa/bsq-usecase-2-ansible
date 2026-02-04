@@ -41,7 +41,8 @@
     register: zones
     changed_when: false
 
-  - set_fact:
+  - name: Build locations
+    set_fact:
       locations: "{{ ['global'] + zones.stdout_lines }}"
 
   - name: Run recommenders
@@ -56,61 +57,60 @@
     changed_when: false
     failed_when: false
 
-  - name: Aggregate recommendations (FIX description)
+  - name: Aggregate recommendations (SAFE)
     set_fact:
       all_recommendations: >-
         {{
           all_recommendations | default([]) +
           (
-            (item.stdout | from_json)
+            (item.stdout | default('[]') | from_json)
             | map('combine', {
                 'recommender': item.item.1,
                 'location': item.item.0,
                 'category': recommender_category_map[item.item.1] | default('OTHER'),
-                'priority': item.priority | default('MEDIUM'),
                 'description': (
-                  item.content.overview.en
+                  item.content.overview.recommendationDescription
                   if item.content is defined
                      and item.content.overview is defined
-                     and item.content.overview.en is defined
-                  else 'Recommendation available (no summary text from API)'
+                     and item.content.overview.recommendationDescription is defined
+                  else 'Recommendation available (no summary text)'
                 )
               })
             | list
           )
         }}
-    loop: "{{ recommender_calls.results }}"
-    when: item.stdout | trim != "[]"
+    loop: "{{ rec_calls.results }}"
+    when:
+      - item.stdout is defined
+      - item.stdout | trim != "[]"
 
-  - name: Build Teams message (Teams-safe formatting)
+  - name: Build Teams message (Teams-safe)
     set_fact:
       teams_message: >-
-        📊 GCP Recommender Report
-        Project : {{ project_id }}
-        Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
-  
-        🔎 SUMMARY
-        • Total        : {{ all_recommendations | length }}
-        • 💰 Cost        : {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}
-        • 🚀 Performance : {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}
-        • 🛡️ Security    : {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}
-        • 🧱 Reliability : {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}
-  
-        💰 TOP 5 COST
+        📊 **GCP Recommender Report**\n
+        Project : {{ project_id }}\n
+        Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}\n
+        \n
+        🔎 **SUMMARY**\n
+        • Total        : {{ all_recommendations | length }}\n
+        • 💰 Cost        : {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}\n
+        • 🚀 Performance : {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}\n
+        • 🛡️ Security    : {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}\n
+        • 🧱 Reliability : {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}\n
+        \n
+        💰 **TOP 5 COST**\n
         {% for r in (all_recommendations | selectattr('category','equalto','COST') | list)[:5] %}
-        • 💸 {{ r.location }} → {{ r.description }}
+        • 💸 {{ r.location }} → {{ r.description }}\n
         {% else %}
-        • No cost recommendations
+        • No cost recommendations\n
         {% endfor %}
-  
-        🚀 TOP 3 PERFORMANCE
+        \n
+        🚀 **TOP 3 PERFORMANCE**\n
         {% for r in (all_recommendations | selectattr('category','equalto','PERFORMANCE') | list)[:3] %}
-        • ⚡ {{ r.location }} → {{ r.description }}
+        • ⚡ {{ r.location }} → {{ r.description }}\n
         {% else %}
-        • No performance recommendations
+        • No performance recommendations\n
         {% endfor %}
-
-
 
   - name: Send to Teams
     uri:
