@@ -71,47 +71,45 @@
     # =========================
     # AGGREGATE RESULTS
     # =========================
-    - name: Aggregate all recommendations (correct category mapping)
+    - name: Parse recommender JSON results
+      set_fact:
+        parsed_recommendations: >-
+          {{
+            parsed_recommendations | default([]) +
+            (
+              item.stdout | default('[]') | from_json
+            )
+          }}
+      loop: "{{ recommender_calls.results }}"
+      when:
+        - item.stdout is defined
+        - item.stdout | trim != "[]"
+        
+    - name: Build final recommendations with correct category
       set_fact:
         all_recommendations: >-
           {{
             all_recommendations | default([]) + [
               rec | combine({
-                'recommender': item.item.1,
-                'location': item.item.0,
+                'location': rec.content.overview.location | default('global'),
+                'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
                 'category': (
                   rec.primaryImpact.category
                   if rec.primaryImpact is defined
-                  else 'OTHER'
+                  else
+                  (
+                    'COST' if 'cost' in rec.description | lower
+                    else 'PERFORMANCE' if 'performance' in rec.description | lower
+                    else 'SECURITY' if 'role' in rec.description | lower
+                    else 'OTHER'
+                  )
                 )
               })
             ]
           }}
-      loop: "{{ recommender_calls.results | subelements('stdout_lines', skip_missing=True) }}"
-      vars:
-        rec: "{{ item.1 | from_json }}"
-      when:
-        - item.1 | trim != ""
-
-
-
-    - name: Normalize missing categories
-      set_fact:
-        all_recommendations: >-
-          {{
-            all_recommendations
-            | map('combine', {
-                'category': (
-                  item.category
-                  if item.category in ['COST','SECURITY','PERFORMANCE','RELIABILITY']
-                  else 'OTHER'
-                )
-              })
-            | list
-          }}
-      loop: "{{ all_recommendations }}"
+      loop: "{{ parsed_recommendations }}"
       loop_control:
-        loop_var: item
+        loop_var: rec
 
     - name: Build category summary
       set_fact:
