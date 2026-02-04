@@ -1,0 +1,174 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    # =========================
+    # BASIC CONFIG
+    # =========================
+    project_id: "joey-preprod-project"
+    output_file: "/tmp/gcp_recommendations_aggregated.json"
+
+    recommenders:
+      - google.compute.image.IdleResourceRecommender
+      - google.compute.disk.IdleResourceRecommender
+      - google.compute.instance.MachineTypeRecommender
+      - google.compute.instanceAvailability.Recommender
+      - google.compute.firewall.SecurityRecommender
+      - google.iam.policy.Recommender
+      - google.container.security.Recommender
+
+    # =========================
+    # TEAMS (HARDCODE URL)
+    # =========================
+    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/94a679db1cd3403e82e75a8e1f0de0c7/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A0nYXR8b0pMuPINueyCynuAFw_VhCBR8sCticsENRlU"
+
+  tasks:
+
+    # =========================
+    # AUTHENTICATION
+    # =========================
+    - name: Write GCP Service Account key
+      copy:
+        content: "{{ gcp_sa_key }}"
+        dest: /tmp/gcp-sa.json
+        mode: '0600'
+
+    - name: Activate GCP service account
+      command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+      changed_when: false
+
+    - name: Verify gcloud auth
+      command: gcloud auth list
+      changed_when: false
+
+    # =========================
+    # DISCOVER LOCATIONS (DYNAMIC)
+    # =========================
+    #- name: Get all GCP zones
+    #  command: gcloud compute zones list --project {{ project_id }} --format="value(name)"
+    #  register: zone_list
+    #  changed_when: false
+       # locations: "{{ ['global'] + zone_list.stdout_lines }}"
+    - name: Build location list (global + zones)
+      set_fact:
+        locations: "{{ ['global', 'asia-southeast2-a'] }}"
+
+    # =========================
+    # RUN RECOMMENDERS
+    # =========================
+    - name: Run GCP Recommenders (all locations)
+      command: >
+        gcloud recommender recommendations list
+        --project {{ project_id }}
+        --location {{ item.0 }}
+        --recommender {{ item.1 }}
+        --format=json
+      loop: "{{ locations | product(recommenders) | list }}"
+      register: recommender_calls
+      changed_when: false
+      failed_when: false
+
+    # =========================
+    # AGGREGATE RESULTS
+    # =========================
+  - name: Aggregate all recommendations
+    set_fact:
+      all_recommendations: >-
+        {{
+          all_recommendations | default([]) +
+          (
+            (item.stdout | default('[]') | from_json)
+            | map('combine', {
+                'recommender': item.item.1,
+                'location': item.item.0,
+                'category': (
+                  primaryImpact.category
+                  if primaryImpact is defined
+                  else 'OTHER'
+                )
+              })
+            | list
+          )
+        }}
+    loop: "{{ recommender_calls.results }}"
+    when:
+      - item.stdout is defined
+      - item.stdout | trim != "[]"
+
+
+    - name: Normalize missing categories
+      set_fact:
+        all_recommendations: >-
+          {{
+            all_recommendations
+            | map('combine', {
+                'category': (
+                  item.category
+                  if item.category in ['COST','SECURITY','PERFORMANCE','RELIABILITY']
+                  else 'OTHER'
+                )
+              })
+            | list
+          }}
+      loop: "{{ all_recommendations }}"
+      loop_control:
+        loop_var: item
+
+    - name: Build category summary
+      set_fact:
+        category_summary:
+          COST: "{{ all_recommendations | selectattr('category','equalto','COST') | list | length }}"
+          PERFORMANCE: "{{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}"
+          SECURITY: "{{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}"
+          RELIABILITY: "{{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}"
+          OTHER: "{{ all_recommendations | selectattr('category','equalto','OTHER') | list | length }}"
+
+
+    # =========================
+    # BUILD TEAMS MESSAGE (HUMAN READABLE)
+    # =========================
+    - name: Build Teams message (HTML safe)
+      set_fact:
+        teams_message: |
+          <b>🔍 GCP Recommender Report</b><br>
+          <b>Project:</b> {{ project_id }}<br>
+          <b>Time:</b> {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}<br><br>
+
+          <b>SUMMARY</b><br>
+          Total Findings: <b>{{ all_recommendations | length }}</b><br><br>
+
+          <b>By Category</b><br>
+          💰 COST: {{ category_summary.COST }}<br>
+          ⚡ PERFORMANCE: {{ category_summary.PERFORMANCE }}<br>
+          🔐 SECURITY: {{ category_summary.SECURITY }}<br>
+          🧱 RELIABILITY: {{ category_summary.RELIABILITY }}<br>
+          📦 OTHER: {{ category_summary.OTHER }}<br><br>
+
+          <b>FINDINGS</b><br>
+          {% for r in all_recommendations %}
+          • ({{ r.location }}) [{{ r.category }}] {{ r.description | default('No description') }}<br>
+          {% endfor %}
+
+
+    # =========================
+    # SEND TO MICROSOFT TEAMS
+    # =========================
+    - name: Send report to Microsoft Teams via Power Automate
+      uri:
+        url: "{{ teams_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          text: "{{ teams_message | trim }}"
+        status_code:
+          - 200
+          - 202
+      register: teams_result
+
+    - name: Debug Teams response
+      debug:
+        msg:
+          - "Teams notification sent"
+          - "HTTP status: {{ teams_result.status }}"
