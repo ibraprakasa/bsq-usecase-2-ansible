@@ -129,7 +129,7 @@
         teams_message: |
           <b>🔍 GCP Recommender Report</b><br>
           <b>Project:</b> {{ project_id }}<br>
-          <b>Time:</b> {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}<br><br>
+          <b>Time:</b> {{ lookup('pipe','TZ=Asia/Jakarta date "+%Y-%m-%d %H:%M:%S"') }} WIB<br><br>
 
           <b>SUMMARY</b><br>
           Total Findings: <b>{{ all_recommendations | length }}</b><br><br>
