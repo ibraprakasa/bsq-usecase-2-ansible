@@ -80,7 +80,7 @@
   # =========================
   # AGGREGATE (FINAL FIX)
   # =========================
-  - name: Aggregate recommendations (FINAL – stable text)
+  - name: Aggregate recommendations (FINAL – correct source)
     set_fact:
       all_recommendations: >-
         {{
@@ -97,6 +97,7 @@
                   item.description
                   if item.description is defined
                   else (
+                    'Save cost by deleting ' ~
                     item.content.operationGroups[0].operations[0].value
                     if item.content is defined
                        and item.content.operationGroups is defined
@@ -120,39 +121,37 @@
   # =========================
   # BUILD TEAMS MESSAGE (CLEAN)
   # =========================
-  - name: Build Teams message
+  - name: Build Teams message (Teams-safe, clean spacing)
     set_fact:
-      teams_message: |
-        📊 **GCP Recommender Report**
-        Project : {{ project_id }}
-        Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
-
-        ========================
-        SUMMARY
-        ========================
-        Total        : {{ all_recommendations | length }}
-        💰 Cost        : {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}
-        🚀 Performance : {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}
-        🛡️ Security    : {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}
-        🧱 Reliability : {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}
-
-        ========================
-        TOP 5 COST
-        ========================
+      teams_message: >-
+        📊 **GCP Recommender Report**\n
+        Project : {{ project_id }}\n
+        Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}\n\n
+        ========================\n
+        **SUMMARY**\n
+        ========================\n
+        Total        : {{ all_recommendations | length }}\n
+        💰 Cost        : {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}\n
+        🚀 Performance : {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}\n
+        🛡️ Security    : {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}\n
+        🧱 Reliability : {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}\n\n
+        ========================\n
+        **TOP 5 COST**\n
+        ========================\n
         {% for r in (all_recommendations | selectattr('category','equalto','COST') | list)[:5] %}
-        • 💸 {{ r.location }} → {{ r.description }}
+        • 💸 {{ r.location }} → {{ r.description }}\n
         {% else %}
-        • No cost recommendations
+        • No cost recommendations\n
+        {% endfor %}\n
+        ========================\n
+        **TOP 3 PERFORMANCE**\n
+        ========================\n
+        {% for r in (all_recommendations | selectattr('category','equalto','PERFORMANCE') | list)[:3] %}
+        • ⚡ {{ r.location }} → {{ r.description }}\n
+        {% else %}
+        • No performance recommendations\n
         {% endfor %}
 
-        ========================
-        TOP 3 PERFORMANCE
-        ========================
-        {% for r in (all_recommendations | selectattr('category','equalto','PERFORMANCE') | list)[:3] %}
-        • ⚡ {{ r.location }} → {{ r.description }}
-        {% else %}
-        • No performance recommendations
-        {% endfor %}
 
   # =========================
   # SEND TO TEAMS
