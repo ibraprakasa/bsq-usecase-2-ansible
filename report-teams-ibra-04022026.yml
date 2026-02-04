@@ -54,15 +54,15 @@
   # =========================
   # LOCATIONS
   # =========================
-  - name: Get zones
-    command: gcloud compute zones list --project {{ project_id }} --format="value(name)"
-    register: zones
-    changed_when: false
+  #- name: Get zones
+  #  command: gcloud compute zones list --project {{ project_id }} --format="value(name)"
+  #  register: zones
+  #  changed_when: false
 
   - name: Build locations
     set_fact:
-      locations: "{{ ['global'] + zones.stdout_lines }}"
-
+  #    locations: "{{ ['global'] + zones.stdout_lines }}"
+    locations: "{{ ['global'] }}"
   # =========================
   # RUN RECOMMENDERS
   # =========================
@@ -89,16 +89,31 @@
           (
             (item.stdout | from_json)
             | map('combine', {
-                'location': item.item.0,
                 'recommender': item.item.1,
-                'category': recommender_category_map[item.item.1],
-                'description': item.description
+                'location': item.item.0,
+                'category': recommender_category_map[item.item.1] | default('OTHER'),
+                'priority': item.priority | default('MEDIUM'),
+                'description': (
+                  item.description
+                  if item.description is defined
+                  else (
+                    item.content.overview.en
+                    if item.content is defined
+                       and item.content.overview is defined
+                       and item.content.overview.en is defined
+                    else
+                      'Recommendation detected (no summary text provided by API)'
+                  )
+                )
               })
             | list
           )
         }}
     loop: "{{ rec_calls.results }}"
-    when: item.stdout | trim != "[]"
+    when:
+      - item.stdout is defined
+      - item.stdout | trim != "[]"
+
 
   # =========================
   # BUILD TEAMS MESSAGE (CLEAN)
