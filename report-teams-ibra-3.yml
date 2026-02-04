@@ -2,99 +2,158 @@
   gather_facts: false
 
   vars:
+    # =========================
+    # BASIC CONFIG
+    # =========================
     project_id: "joey-preprod-project"
+    output_file: "/tmp/gcp_recommendations_aggregated.json"
 
-    # Recommenders yang TERBUKTI RETURN DATA
     recommenders:
       - google.compute.image.IdleResourceRecommender
       - google.compute.disk.IdleResourceRecommender
+      - google.compute.instance.MachineTypeRecommender
+      - google.compute.instanceAvailability.Recommender
+      - google.compute.firewall.SecurityRecommender
+      - google.iam.policy.Recommender
+      - google.container.security.Recommender
 
-    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/94a679db1cd3403e82e75a8e1f0de0c7/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=XXXXX"
+    # =========================
+    # TEAMS (HARDCODE URL)
+    # =========================
+    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/94a679db1cd3403e82e75a8e1f0de0c7/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A0nYXR8b0pMuPINueyCynuAFw_VhCBR8sCticsENRlU"
 
   tasks:
 
-  # =========================
-  # AUTH
-  # =========================
-  - name: Write GCP service account
-    copy:
-      content: "{{ gcp_sa_key }}"
-      dest: /tmp/gcp-sa.json
-      mode: '0600'
+    # =========================
+    # AUTHENTICATION
+    # =========================
+    - name: Write GCP Service Account key
+      copy:
+        content: "{{ gcp_sa_key }}"
+        dest: /tmp/gcp-sa.json
+        mode: '0600'
 
-  - name: Activate GCP auth
-    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
-    changed_when: false
+    - name: Activate GCP service account
+      command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+      changed_when: false
 
-  # =========================
-  # RUN RECOMMENDER (GLOBAL ONLY)
-  # =========================
-  - name: Get recommendations (global)
-    command: >
-      gcloud recommender recommendations list
-      --project {{ project_id }}
-      --location global
-      --recommender {{ item }}
-      --format=json
-    loop: "{{ recommenders }}"
-    register: rec_calls
-    changed_when: false
-    failed_when: false
+    - name: Verify gcloud auth
+      command: gcloud auth list
+      changed_when: false
 
-  # =========================
-  # AGGREGATE (SAFE & SIMPLE)
-  # =========================
-  - name: Aggregate recommendations
-    set_fact:
-      all_recommendations: >-
-        {{
-          all_recommendations | default([]) +
-          (
-            item.stdout | from_json
+    # =========================
+    # DISCOVER LOCATIONS (DYNAMIC)
+    # =========================
+    #- name: Get all GCP zones
+    #  command: gcloud compute zones list --project {{ project_id }} --format="value(name)"
+    #  register: zone_list
+    #  changed_when: false
+       # locations: "{{ ['global'] + zone_list.stdout_lines }}"
+    - name: Build location list (global + zones)
+      set_fact:
+        locations: "{{ ['global'] }}"
+
+    # =========================
+    # RUN RECOMMENDERS
+    # =========================
+    - name: Run GCP Recommenders (all locations)
+      command: >
+        gcloud recommender recommendations list
+        --project {{ project_id }}
+        --location {{ item.0 }}
+        --recommender {{ item.1 }}
+        --format=json
+      loop: "{{ locations | product(recommenders) | list }}"
+      register: recommender_calls
+      changed_when: false
+      failed_when: false
+
+    # =========================
+    # AGGREGATE RESULTS
+    # =========================
+    - name: Aggregate all recommendations
+      set_fact:
+        all_recommendations: >-
+          {{
+            all_recommendations | default([]) +
+            (
+              (item.stdout | default('[]') | from_json)
+              | map('combine', {
+                  'recommender': item.item.1,
+                  'location': item.item.0,
+                  'category': (
+                    item.primaryImpact.category
+                    if item.primaryImpact is defined
+                    else 'OTHER'
+                  )
+                })
+              | list
+            )
+          }}
+      loop: "{{ recommender_calls.results }}"
+      when:
+        - item.stdout is defined
+        - item.stdout | trim != "[]"
+
+    - name: Normalize missing categories
+      set_fact:
+        all_recommendations: >-
+          {{
+            all_recommendations
             | map('combine', {
-                'location': 'global',
-                'description': item.description
+                'category': (
+                  item.category
+                  if item.category in ['COST','SECURITY','PERFORMANCE','RELIABILITY']
+                  else 'OTHER'
+                )
               })
             | list
-          )
-        }}
-    loop: "{{ rec_calls.results }}"
-    when:
-      - item.stdout is defined
-      - item.stdout | trim != "[]"
+          }}
+      loop: "{{ all_recommendations }}"
+      loop_control:
+        loop_var: item
 
-  # =========================
-  # BUILD TEAMS MESSAGE (NO ESCAPE, NO \n)
-  # =========================
-  - name: Build Teams message
-    set_fact:
-      teams_message: |
-        🔍 GCP Recommender Report
-        Project : {{ project_id }}
-        Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
+    # =========================
+    # BUILD TEAMS MESSAGE (HUMAN READABLE)
+    # =========================
+    - name: Build Teams message
+      set_fact:
+        teams_message: |
+          🔍 GCP Recommender Report
+          Project : {{ project_id }}
+          Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
 
-        ========================
-        SUMMARY
-        ========================
-        Total Findings : {{ all_recommendations | length }}
+          ========================
+          SUMMARY
+          ========================
+          Total Findings : {{ all_recommendations | length }}
 
-        ========================
-        TOP 5 FINDINGS
-        ========================
-        {% for r in all_recommendations[:5] %}
-        • ({{ r.location }}) {{ r.description }}
-        {% endfor %}
+          ========================
+          TOP 5 FINDINGS
+          ========================
+          {% for r in all_recommendations[:5] %}
+          - ({{ r.location }}) {{ r.description | default('No description') }}
+          {% endfor %}
 
-  # =========================
-  # SEND TO TEAMS
-  # =========================
-  - name: Send to Microsoft Teams
-    uri:
-      url: "{{ teams_webhook_url }}"
-      method: POST
-      headers:
-        Content-Type: application/json
-      body_format: json
-      body:
-        text: "{{ teams_message }}"
-      status_code: [200, 202]
+    # =========================
+    # SEND TO MICROSOFT TEAMS
+    # =========================
+    - name: Send report to Microsoft Teams via Power Automate
+      uri:
+        url: "{{ teams_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          text: "{{ teams_message | trim }}"
+        status_code:
+          - 200
+          - 202
+      register: teams_result
+
+    - name: Debug Teams response
+      debug:
+        msg:
+          - "Teams notification sent"
+          - "HTTP status: {{ teams_result.status }}"
