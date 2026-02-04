@@ -51,7 +51,7 @@
        # locations: "{{ ['global'] + zone_list.stdout_lines }}"
     - name: Build location list (global + zones)
       set_fact:
-        locations: "{{ ['global'] }}"
+        locations: "{{ ['global', 'asia-southeast2-a'] }}"
 
     # =========================
     # RUN RECOMMENDERS
