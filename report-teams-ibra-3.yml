@@ -131,8 +131,8 @@
           ========================
           TOP 5 FINDINGS
           ========================
-          {% for r in all_recommendations[:5] %}
-          - ({{ r.location }}) {{ r.description | default('No description') }}
+          {% for r in all_recommendations %}
+          - ({{ r.location }}) [{{ r.category }}] {{ r.description | default('No description') }}
           {% endfor %}
 
     # =========================
