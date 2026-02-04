@@ -58,11 +58,10 @@
   #  command: gcloud compute zones list --project {{ project_id }} --format="value(name)"
   #  register: zones
   #  changed_when: false
-
+  # locations: "{{ ['global'] + zones.stdout_lines }}"
   - name: Build locations
-    set_fact:
-  #    locations: "{{ ['global'] + zones.stdout_lines }}"
-    locations: "{{ ['global'] }}"
+    set_fact:   
+      locations: "{{ ['global'] }}"
   # =========================
   # RUN RECOMMENDERS
   # =========================
