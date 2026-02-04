@@ -1,0 +1,100 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "joey-preprod-project"
+
+    # Recommenders yang TERBUKTI RETURN DATA
+    recommenders:
+      - google.compute.image.IdleResourceRecommender
+      - google.compute.disk.IdleResourceRecommender
+
+    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/94a679db1cd3403e82e75a8e1f0de0c7/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=XXXXX"
+
+  tasks:
+
+  # =========================
+  # AUTH
+  # =========================
+  - name: Write GCP service account
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
+
+  - name: Activate GCP auth
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
+
+  # =========================
+  # RUN RECOMMENDER (GLOBAL ONLY)
+  # =========================
+  - name: Get recommendations (global)
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location global
+      --recommender {{ item }}
+      --format=json
+    loop: "{{ recommenders }}"
+    register: rec_calls
+    changed_when: false
+    failed_when: false
+
+  # =========================
+  # AGGREGATE (SAFE & SIMPLE)
+  # =========================
+  - name: Aggregate recommendations
+    set_fact:
+      all_recommendations: >-
+        {{
+          all_recommendations | default([]) +
+          (
+            item.stdout | from_json
+            | map('combine', {
+                'location': 'global',
+                'description': item.description
+              })
+            | list
+          )
+        }}
+    loop: "{{ rec_calls.results }}"
+    when:
+      - item.stdout is defined
+      - item.stdout | trim != "[]"
+
+  # =========================
+  # BUILD TEAMS MESSAGE (NO ESCAPE, NO \n)
+  # =========================
+  - name: Build Teams message
+    set_fact:
+      teams_message: |
+        🔍 GCP Recommender Report
+        Project : {{ project_id }}
+        Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
+
+        ========================
+        SUMMARY
+        ========================
+        Total Findings : {{ all_recommendations | length }}
+
+        ========================
+        TOP 5 FINDINGS
+        ========================
+        {% for r in all_recommendations[:5] %}
+        • ({{ r.location }}) {{ r.description }}
+        {% endfor %}
+
+  # =========================
+  # SEND TO TEAMS
+  # =========================
+  - name: Send to Microsoft Teams
+    uri:
+      url: "{{ teams_webhook_url }}"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body_format: json
+      body:
+        text: "{{ teams_message }}"
+      status_code: [200, 202]
