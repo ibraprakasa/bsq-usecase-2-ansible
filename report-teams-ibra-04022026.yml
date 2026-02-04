@@ -2,9 +2,6 @@
   gather_facts: false
 
   vars:
-    # =========================
-    # BASIC CONFIG
-    # =========================
     project_id: "joey-preprod-project"
 
     recommenders:
@@ -16,145 +13,109 @@
       - google.iam.policy.Recommender
       - google.container.security.Recommender
 
-    # =========================
-    # TEAMS (HARDCODE URL)
-    # =========================
-    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/94a679db1cd3403e82e75a8e1f0de0c7/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A0nYXR8b0pMuPINueyCynuAFw_VhCBR8sCticsENRlU"
+    recommender_category_map:
+      google.compute.image.IdleResourceRecommender: COST
+      google.compute.disk.IdleResourceRecommender: COST
+      google.compute.instance.MachineTypeRecommender: PERFORMANCE
+      google.compute.instanceAvailability.Recommender: RELIABILITY
+      google.compute.firewall.SecurityRecommender: SECURITY
+      google.iam.policy.Recommender: SECURITY
+      google.container.security.Recommender: SECURITY
+
+    teams_webhook_url: "HARDCODE_URL_KAMU"
 
   tasks:
 
-    # =========================
-    # AUTHENTICATION
-    # =========================
-    - name: Write GCP Service Account key
-      copy:
-        content: "{{ gcp_sa_key }}"
-        dest: /tmp/gcp-sa.json
-        mode: '0600'
+  - name: Write SA key
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
 
-    - name: Activate GCP service account
-      command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
-      changed_when: false
+  - name: Auth GCP
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
 
-    # =========================
-    # DISCOVER LOCATIONS
-    # =========================
-    - name: Get all GCP zones
-      command: gcloud compute zones list --project {{ project_id }} --format="value(name)"
-      register: zone_list
-      changed_when: false
+  - name: Get zones
+    command: gcloud compute zones list --project {{ project_id }} --format="value(name)"
+    register: zones
+    changed_when: false
 
-    - name: Build location list
-      set_fact:
-        locations: "{{ ['global'] + zone_list.stdout_lines }}"
+  - set_fact:
+      locations: "{{ ['global'] + zones.stdout_lines }}"
 
-    # =========================
-    # RUN RECOMMENDERS
-    # =========================
-    - name: Run GCP Recommenders (all locations)
-      command: >
-        gcloud recommender recommendations list
-        --project {{ project_id }}
-        --location {{ item.0 }}
-        --recommender {{ item.1 }}
-        --format=json
-      loop: "{{ locations | product(recommenders) | list }}"
-      register: recommender_calls
-      changed_when: false
-      failed_when: false
+  - name: Run recommenders
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location {{ item.0 }}
+      --recommender {{ item.1 }}
+      --format=json
+    loop: "{{ locations | product(recommenders) | list }}"
+    register: rec_calls
+    changed_when: false
+    failed_when: false
 
-    # =========================
-    # AGGREGATE + NORMALIZE
-    # =========================
-    - name: Aggregate recommendations
-      set_fact:
-        all_recommendations: >-
-          {{
-            all_recommendations | default([]) +
-            (
-              (item.stdout | default('[]') | from_json)
-              | map('combine', {
-                  'recommender': item.item.1,
-                  'location': item.item.0,
-                  'category': item.primaryImpact.category | default('OTHER'),
-                  'priority': item.priority | default('LOW'),
-                  'description': item.description | default('No description')
-                })
-              | list
-            )
-          }}
-      loop: "{{ recommender_calls.results }}"
-      when: item.stdout | default('[]') | trim != "[]"
+  - name: Aggregate recommendations (FIXED)
+    set_fact:
+      all_recommendations: >-
+        {{
+          all_recommendations | default([]) +
+          (
+            (item.stdout | default('[]') | from_json)
+            | map('combine', {
+                'location': item.item.0,
+                'recommender': item.item.1,
+                'category': recommender_category_map[item.item.1],
+                'description': item.description | default(item.content.description | default('No description'))
+              })
+            | list
+          )
+        }}
+    loop: "{{ rec_calls.results }}"
+    when: item.stdout | default('[]') | trim != "[]"
 
-    # =========================
-    # SORTING LOGIC
-    # =========================
-    - name: Sort by priority (HIGH → LOW)
-      set_fact:
-        sorted_recommendations: >-
-          {{
-            all_recommendations
-            | sort(attribute='priority', reverse=true)
-          }}
+  - name: Build Teams message (FINAL)
+    set_fact:
+      teams_message: |
+        📊 **GCP Recommender Report**
+        Project : {{ project_id }}
+        Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
 
-    # =========================
-    # BUILD TEAMS MESSAGE (PRO)
-    # =========================
-    - name: Build Teams message
-      set_fact:
-        teams_message: |
-          📊 **GCP Recommender Report**
-          Project : {{ project_id }}
-          Time    : {{ lookup('pipe','date "+%Y-%m-%d %H:%M:%S"') }}
-    
-          =========================
-          SUMMARY
-          =========================
-          Total Findings : {{ all_recommendations | length }}
-          • Cost        : {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}
-          • Security    : {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}
-          • Performance : {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}
-          • Reliability : {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}
-    
-          =========================
-          TOP 5 COST FINDINGS
-          =========================
-          {% for r in (
-               sorted_recommendations
-               | selectattr('category','equalto','COST')
-               | list
-             )[:5] %}
-          - 🔴 [{{ r.priority }}][{{ r.location }}]
-            {{ r.description }}
-          {% else %}
-          - No COST findings
-          {% endfor %}
-    
-          =========================
-          TOP 3 SECURITY FINDINGS
-          =========================
-          {% for r in (
-               sorted_recommendations
-               | selectattr('category','equalto','SECURITY')
-               | list
-             )[:3] %}
-          - 🛡️ [{{ r.priority }}]
-            {{ r.description }}
-          {% else %}
-          - No SECURITY findings
-          {% endfor %}
+        =========================
+        SUMMARY
+        =========================
+        Total : {{ all_recommendations | length }}
+        • Cost        : {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}
+        • Performance : {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}
+        • Security    : {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}
+        • Reliability : {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}
 
+        =========================
+        TOP 5 COST
+        =========================
+        {% for r in (all_recommendations | selectattr('category','equalto','COST') | list)[:5] %}
+        - 💰 [{{ r.location }}] {{ r.description }}
+        {% else %}
+        - No COST findings
+        {% endfor %}
 
-    # =========================
-    # SEND TO TEAMS
-    # =========================
-    - name: Send report to Microsoft Teams
-      uri:
-        url: "{{ teams_webhook_url }}"
-        method: POST
-        headers:
-          Content-Type: application/json
-        body_format: json
-        body:
-          text: "{{ teams_message | trim }}"
-        status_code: [200, 202]
+        =========================
+        TOP 3 PERFORMANCE
+        =========================
+        {% for r in (all_recommendations | selectattr('category','equalto','PERFORMANCE') | list)[:3] %}
+        - 🚀 [{{ r.location }}] {{ r.description }}
+        {% else %}
+        - No PERFORMANCE findings
+        {% endfor %}
+
+  - name: Send to Teams
+    uri:
+      url: "{{ teams_webhook_url }}"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body_format: json
+      body:
+        text: "{{ teams_message }}"
+      status_code: [200, 202]
