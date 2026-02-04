@@ -71,47 +71,45 @@
     # =========================
     # AGGREGATE RESULTS
     # =========================
-    - name: Aggregate all recommendations
+    - name: Parse recommender JSON results
       set_fact:
-        all_recommendations: >-
+        parsed_recommendations: >-
           {{
-            all_recommendations | default([]) +
+            parsed_recommendations | default([]) +
             (
-              (item.stdout | default('[]') | from_json)
-              | map('combine', {
-                  'recommender': item.item.1,
-                  'location': item.item.0,
-                  'category': (
-                    item.primaryImpact.category
-                    if item.primaryImpact is defined
-                    else 'OTHER'
-                  )
-                })
-              | list
+              item.stdout | default('[]') | from_json
             )
           }}
       loop: "{{ recommender_calls.results }}"
       when:
         - item.stdout is defined
         - item.stdout | trim != "[]"
-
-    - name: Normalize missing categories
+        
+    - name: Build final recommendations with correct category
       set_fact:
         all_recommendations: >-
           {{
-            all_recommendations
-            | map('combine', {
+            all_recommendations | default([]) + [
+              rec | combine({
+                'location': rec.content.overview.location | default('global'),
+                'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
                 'category': (
-                  item.category
-                  if item.category in ['COST','SECURITY','PERFORMANCE','RELIABILITY']
-                  else 'OTHER'
+                  rec.primaryImpact.category
+                  if rec.primaryImpact is defined
+                  else
+                  (
+                    'COST' if 'cost' in rec.description | lower
+                    else 'PERFORMANCE' if 'performance' in rec.description | lower
+                    else 'SECURITY' if 'role' in rec.description | lower
+                    else 'OTHER'
+                  )
                 )
               })
-            | list
+            ]
           }}
-      loop: "{{ all_recommendations }}"
+      loop: "{{ parsed_recommendations }}"
       loop_control:
-        loop_var: item
+        loop_var: rec
 
     - name: Build category summary
       set_fact:
