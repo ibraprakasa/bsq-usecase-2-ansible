@@ -9,31 +9,13 @@
     output_file: "/tmp/gcp_recommendations_aggregated.json"
 
     recommenders:
-      # === COMPUTE COST ===
       - google.compute.image.IdleResourceRecommender
       - google.compute.disk.IdleResourceRecommender
-      - google.compute.snapshot.IdleResourceRecommender
-      - google.compute.address.IdleResourceRecommender
-    
-      # === COMPUTE PERFORMANCE / RELIABILITY ===
       - google.compute.instance.MachineTypeRecommender
       - google.compute.instanceAvailability.Recommender
-    
-      # === SECURITY ===
       - google.compute.firewall.SecurityRecommender
       - google.iam.policy.Recommender
-    
-      # === GKE / CONTAINER ===
       - google.container.security.Recommender
-      - google.container.clusterUpgrade.Recommender
-      - google.container.nodePoolUpgrade.Recommender
-    
-      # === OPTIONAL (enable only if service used) ===
-      - google.cloudsql.instance.IdleRecommender
-      - google.cloudsql.instance.PerformanceRecommender
-      - google.bigquery.capacityCommitments.Recommender
-      - google.storage.bucket.SecurityRecommender
-
 
     # =========================
     # TEAMS (HARDCODE URL)
@@ -69,7 +51,7 @@
        # locations: "{{ ['global'] + zone_list.stdout_lines }}"
     - name: Build location list (global + zones)
       set_fact:
-        locations: "{{ ['global', 'asia-southeast2-a'] }}"
+        locations: "{{ ['global', 'asia-southeast2-a', 'asia-southeast'] }}"
 
     # =========================
     # RUN RECOMMENDERS
@@ -103,31 +85,44 @@
         - item.stdout is defined
         - item.stdout | trim != "[]"
         
-    - name: Build final recommendations with correct category
-      set_fact:
-        all_recommendations: >-
-          {{
-            all_recommendations | default([]) + [
-              rec | combine({
-                'location': rec.content.overview.location | default('global'),
-                'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
-                'category': (
-                  rec.primaryImpact.category
-                  if rec.primaryImpact is defined
-                  else
-                  (
-                    'COST' if 'cost' in rec.description | lower
-                    else 'PERFORMANCE' if 'performance' in rec.description | lower
-                    else 'SECURITY' if 'role' in rec.description | lower
-                    else 'OTHER'
-                  )
-                )
-              })
-            ]
-          }}
-      loop: "{{ parsed_recommendations }}"
-      loop_control:
-        loop_var: rec
+    - name: Build final recommendations (improved resource context)
+          set_fact:
+            all_recommendations: >-
+              {{
+                all_recommendations | default([]) + [
+                  rec | combine({
+                    'location': rec.name.split('/locations/')[1].split('/')[0],
+        
+                    'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
+        
+                    'resource_name': (
+                      rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
+                      if rec.content is defined
+                         and rec.content.operationGroups is defined
+                         and rec.content.operationGroups | length > 0
+                         and rec.content.operationGroups[0].operations | length > 0
+                         and rec.content.operationGroups[0].operations[0].resource is defined
+                      else 'N/A'
+                    ),
+        
+                    'category': (
+                      rec.primaryImpact.category
+                      if rec.primaryImpact is defined
+                      else
+                      (
+                        'COST' if 'cost' in rec.description | lower
+                        else 'PERFORMANCE' if 'performance' in rec.description | lower
+                        else 'SECURITY' if 'role' in rec.description | lower
+                        else 'OTHER'
+                      )
+                    )
+                  })
+                ]
+              }}
+          loop: "{{ parsed_recommendations }}"
+          loop_control:
+            loop_var: rec
+
 
     - name: Build category summary
       set_fact:
