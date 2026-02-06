@@ -8,31 +8,31 @@
     project_id: "joey-preprod-project"
     output_file: "/tmp/gcp_recommendations_aggregated.json"
 
-  recommenders:
-    # === COMPUTE COST ===
-    - google.compute.image.IdleResourceRecommender
-    - google.compute.disk.IdleResourceRecommender
-    - google.compute.snapshot.IdleResourceRecommender
-    - google.compute.address.IdleResourceRecommender
-  
-    # === COMPUTE PERFORMANCE / RELIABILITY ===
-    - google.compute.instance.MachineTypeRecommender
-    - google.compute.instanceAvailability.Recommender
-  
-    # === SECURITY ===
-    - google.compute.firewall.SecurityRecommender
-    - google.iam.policy.Recommender
-  
-    # === GKE / CONTAINER ===
-    - google.container.security.Recommender
-    - google.container.clusterUpgrade.Recommender
-    - google.container.nodePoolUpgrade.Recommender
-  
-    # === OPTIONAL (enable only if service used) ===
-    # - google.cloudsql.instance.IdleRecommender
-    # - google.cloudsql.instance.PerformanceRecommender
-    # - google.bigquery.capacityCommitments.Recommender
-    # - google.storage.bucket.SecurityRecommender
+    recommenders:
+      # === COMPUTE COST ===
+      - google.compute.image.IdleResourceRecommender
+      - google.compute.disk.IdleResourceRecommender
+      - google.compute.snapshot.IdleResourceRecommender
+      - google.compute.address.IdleResourceRecommender
+    
+      # === COMPUTE PERFORMANCE / RELIABILITY ===
+      - google.compute.instance.MachineTypeRecommender
+      - google.compute.instanceAvailability.Recommender
+    
+      # === SECURITY ===
+      - google.compute.firewall.SecurityRecommender
+      - google.iam.policy.Recommender
+    
+      # === GKE / CONTAINER ===
+      - google.container.security.Recommender
+      - google.container.clusterUpgrade.Recommender
+      - google.container.nodePoolUpgrade.Recommender
+    
+      # === OPTIONAL (enable only if service used) ===
+      - google.cloudsql.instance.IdleRecommender
+      - google.cloudsql.instance.PerformanceRecommender
+      - google.bigquery.capacityCommitments.Recommender
+      - google.storage.bucket.SecurityRecommender
 
 
     # =========================
