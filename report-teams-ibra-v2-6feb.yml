@@ -63,9 +63,9 @@
           all_recommendations | default([]) + [
             {
               'location': rec.name.split('/locations/')[1].split('/')[0],
-
+  
               'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
-
+  
               'resource': (
                 rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
                 if rec.content is defined
@@ -73,31 +73,26 @@
                    and rec.content.operationGroups | length > 0
                    and rec.content.operationGroups[0].operations | length > 0
                    and rec.content.operationGroups[0].operations[0].resource is defined
-                else
-                (
-                  rec.content.overview.en
-                  | regex_search("'([^']+)'")
-                  | regex_replace("'", "")
-                  if rec.content is defined
-                     and rec.content.overview is defined
-                     and rec.content.overview.en is defined
-                     and "'" in rec.content.overview.en
-                  else 'N/A'
-                )
+                else 'N/A'
               ),
-
+  
               'category': (
                 rec.primaryImpact.category
                 if rec.primaryImpact is defined
                 else 'OTHER'
               ),
-
+  
               'summary': (
                 rec.content.overview.en
                 if rec.content is defined
                    and rec.content.overview is defined
                    and rec.content.overview.en is defined
-                else 'Recommendation detected'
+                else
+                (
+                  rec.description
+                  if rec.description is defined
+                  else 'Recommendation detected'
+                )
               )
             }
           ]
@@ -105,6 +100,7 @@
     loop: "{{ parsed }}"
     loop_control:
       loop_var: rec
+
 
 
 
