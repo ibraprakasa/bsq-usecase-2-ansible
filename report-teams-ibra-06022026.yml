@@ -2,185 +2,127 @@
   gather_facts: false
 
   vars:
-    # =========================
-    # BASIC CONFIG
-    # =========================
     project_id: "joey-preprod-project"
-    output_file: "/tmp/gcp_recommendations_aggregated.json"
 
     recommenders:
+      # COST
       - google.compute.image.IdleResourceRecommender
       - google.compute.disk.IdleResourceRecommender
+
+      # PERFORMANCE
       - google.compute.instance.MachineTypeRecommender
+      - google.cloudsql.instance.PerformanceRecommender
+
+      # RELIABILITY
       - google.compute.instanceAvailability.Recommender
+
+      # SECURITY
       - google.compute.firewall.SecurityRecommender
       - google.iam.policy.Recommender
       - google.container.security.Recommender
 
-    # =========================
-    # TEAMS (HARDCODE URL)
-    # =========================
-    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/94a679db1cd3403e82e75a8e1f0de0c7/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A0nYXR8b0pMuPINueyCynuAFw_VhCBR8sCticsENRlU"
+    teams_webhook_url: "<<<URL>>>"
 
   tasks:
 
-    # =========================
-    # AUTHENTICATION
-    # =========================
-    - name: Write GCP Service Account key
-      copy:
-        content: "{{ gcp_sa_key }}"
-        dest: /tmp/gcp-sa.json
-        mode: '0600'
+  - name: Write GCP SA
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
 
-    - name: Activate GCP service account
-      command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
-      changed_when: false
+  - name: Auth GCP
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
 
-    - name: Verify gcloud auth
-      command: gcloud auth list
-      changed_when: false
+  - set_fact:
+      locations: ['global', 'asia-southeast2-a']
 
-    # =========================
-    # DISCOVER LOCATIONS (DYNAMIC)
-    # =========================
-    #- name: Get all GCP zones
-    #  command: gcloud compute zones list --project {{ project_id }} --format="value(name)"
-    #  register: zone_list
-    #  changed_when: false
-       # locations: "{{ ['global'] + zone_list.stdout_lines }}"
-    - name: Build location list (global + zones)
-      set_fact:
-        locations: "{{ ['global', 'asia-southeast2-a', 'asia-southeast'] }}"
+  - name: Run recommender API
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location {{ item.0 }}
+      --recommender {{ item.1 }}
+      --format=json
+    loop: "{{ locations | product(recommenders) | list }}"
+    register: rec_calls
+    failed_when: false
+    changed_when: false
 
-    # =========================
-    # RUN RECOMMENDERS
-    # =========================
-    - name: Run GCP Recommenders (all locations)
-      command: >
-        gcloud recommender recommendations list
-        --project {{ project_id }}
-        --location {{ item.0 }}
-        --recommender {{ item.1 }}
-        --format=json
-      loop: "{{ locations | product(recommenders) | list }}"
-      register: recommender_calls
-      changed_when: false
-      failed_when: false
+  - name: Parse results
+    set_fact:
+      parsed: "{{ parsed | default([]) + (item.stdout | from_json) }}"
+    loop: "{{ rec_calls.results }}"
+    when: item.stdout is defined and item.stdout | trim != "[]"
 
-    # =========================
-    # AGGREGATE RESULTS
-    # =========================
-    - name: Parse recommender JSON results
-      set_fact:
-        parsed_recommendations: >-
-          {{
-            parsed_recommendations | default([]) +
-            (
-              item.stdout | default('[]') | from_json
-            )
-          }}
-      loop: "{{ recommender_calls.results }}"
-      when:
-        - item.stdout is defined
-        - item.stdout | trim != "[]"
-        
-    - name: Build final recommendations (improved resource context)
-      set_fact:
-        all_recommendations: >-
-          {{
-            all_recommendations | default([]) + [
-              rec | combine({
-                'location': rec.name.split('/locations/')[1].split('/')[0],
-    
-                'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
-    
-                'resource_name': (
-                  rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
-                  if rec.content is defined
-                     and rec.content.operationGroups is defined
-                     and rec.content.operationGroups | length > 0
-                     and rec.content.operationGroups[0].operations | length > 0
-                     and rec.content.operationGroups[0].operations[0].resource is defined
-                  else 'N/A'
-                ),
-    
-                'category': (
-                  rec.primaryImpact.category
-                  if rec.primaryImpact is defined
-                  else
-                  (
-                    'COST' if 'cost' in rec.description | lower
-                    else 'PERFORMANCE' if 'performance' in rec.description | lower
-                    else 'SECURITY' if 'role' in rec.description | lower
-                    else 'OTHER'
-                  )
-                )
-              })
-            ]
-          }}
-      loop: "{{ parsed_recommendations }}"
-      loop_control:
-        loop_var: rec
+  - name: Normalize recommendations
+    set_fact:
+      all_recommendations: >-
+        {{
+          all_recommendations | default([]) + [
+            {
+              'location': rec.name.split('/locations/')[1].split('/')[0],
+              'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
 
-          
+              'resource': (
+                rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
+                if rec.content is defined
+                   and rec.content.operationGroups is defined
+                   and rec.content.operationGroups | length > 0
+                   and rec.content.operationGroups[0].operations | length > 0
+                   and rec.content.operationGroups[0].operations[0].resource is defined
+                else 'N/A'
+              ),
 
+              'category': (
+                rec.primaryImpact.category
+                if rec.primaryImpact is defined
+                else 'OTHER'
+              ),
 
-    - name: Build category summary
-      set_fact:
-        category_summary:
-          COST: "{{ all_recommendations | selectattr('category','equalto','COST') | list | length }}"
-          PERFORMANCE: "{{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}"
-          SECURITY: "{{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}"
-          RELIABILITY: "{{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}"
-          OTHER: "{{ all_recommendations | selectattr('category','equalto','OTHER') | list | length }}"
+              'summary': (
+                rec.content.overview.en
+                if rec.content is defined
+                   and rec.content.overview is defined
+                   and rec.content.overview.en is defined
+                else 'Recommendation detected'
+              )
+            }
+          ]
+        }}
+    loop: "{{ parsed }}"
+    loop_control:
+      loop_var: rec
 
+  - name: Build Teams message
+    set_fact:
+      teams_message: |
+        <b>🔍 GCP Recommender Report</b><br>
+        <b>Project:</b> {{ project_id }}<br>
+        <b>Time:</b> {{ lookup('pipe','TZ=Asia/Jakarta date "+%Y-%m-%d %H:%M:%S"') }} WIB<br><br>
 
-    # =========================
-    # BUILD TEAMS MESSAGE (HUMAN READABLE)
-    # =========================
-    - name: Build Teams message (HTML safe)
-      set_fact:
-        teams_message: |
-          <b>🔍 GCP Recommender Report</b><br>
-          <b>Project:</b> {{ project_id }}<br>
-          <b>Time:</b> {{ lookup('pipe','TZ=Asia/Jakarta date "+%Y-%m-%d %H:%M:%S"') }} WIB<br><br>
+        <b>SUMMARY</b><br>
+        Total: {{ all_recommendations | length }}<br>
+        💰 Cost: {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}<br>
+        ⚡ Performance: {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}<br>
+        🔐 Security: {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}<br>
+        🧱 Reliability: {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}<br><br>
 
-          <b>SUMMARY</b><br>
-          Total Findings: <b>{{ all_recommendations | length }}</b><br><br>
+        <b>FINDINGS</b><br>
+        {% for r in all_recommendations %}
+        • ({{ r.location }}) [{{ r.category }}]<br>
+        Resource: {{ r.resource }}<br>
+        {{ r.summary }}<br><br>
+        {% endfor %}
 
-          <b>By Category</b><br>
-          💰 COST: {{ category_summary.COST }}<br>
-          ⚡ PERFORMANCE: {{ category_summary.PERFORMANCE }}<br>
-          🔐 SECURITY: {{ category_summary.SECURITY }}<br>
-          🧱 RELIABILITY: {{ category_summary.RELIABILITY }}<br>
-          📦 OTHER: {{ category_summary.OTHER }}<br><br>
-
-          <b>FINDINGS</b><br>
-          {% for r in all_recommendations %}
-          • ({{ r.location }}) [{{ r.category }}] {{ r.description | default('No description') }}<br>
-          {% endfor %}
-
-
-    # =========================
-    # SEND TO MICROSOFT TEAMS
-    # =========================
-    - name: Send report to Microsoft Teams via Power Automate
-      uri:
-        url: "{{ teams_webhook_url }}"
-        method: POST
-        headers:
-          Content-Type: application/json
-        body_format: json
-        body:
-          text: "{{ teams_message | trim }}"
-        status_code:
-          - 200
-          - 202
-      register: teams_result
-
-    - name: Debug Teams response
-      debug:
-        msg:
-          - "Teams notification sent"
-          - "HTTP status: {{ teams_result.status }}"
+  - name: Send to Teams
+    uri:
+      url: "{{ teams_webhook_url }}"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body_format: json
+      body:
+        text: "{{ teams_message }}"
+      status_code: [200,202]
