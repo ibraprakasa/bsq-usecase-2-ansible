@@ -63,6 +63,7 @@
           all_recommendations | default([]) + [
             {
               'location': rec.name.split('/locations/')[1].split('/')[0],
+
               'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
 
               'resource': (
@@ -74,14 +75,16 @@
                    and rec.content.operationGroups[0].operations[0].resource is defined
                 else
                 (
-                  rec.content.overview.en | regex_search("'([^']+)'") | regex_replace("'", "")
+                  rec.content.overview.en
+                  | regex_search("'([^']+)'")
+                  | regex_replace("'", "")
                   if rec.content is defined
                      and rec.content.overview is defined
                      and rec.content.overview.en is defined
                      and "'" in rec.content.overview.en
                   else 'N/A'
                 )
-              )
+              ),
 
               'category': (
                 rec.primaryImpact.category
@@ -102,6 +105,8 @@
     loop: "{{ parsed }}"
     loop_control:
       loop_var: rec
+
+
 
   - name: Build Teams message
     set_fact:
