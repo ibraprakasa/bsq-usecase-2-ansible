@@ -36,7 +36,7 @@
     changed_when: false
 
   - set_fact:
-      locations: ['global', 'asia-southeast2-a']
+      locations: ['global', 'asia-southeast2-a', 'asia-southeast2']
 
   - name: Run recommender API
     command: >
@@ -72,8 +72,16 @@
                    and rec.content.operationGroups | length > 0
                    and rec.content.operationGroups[0].operations | length > 0
                    and rec.content.operationGroups[0].operations[0].resource is defined
-                else 'N/A'
-              ),
+                else
+                (
+                  rec.content.overview.en | regex_search("'([^']+)'") | regex_replace("'", "")
+                  if rec.content is defined
+                     and rec.content.overview is defined
+                     and rec.content.overview.en is defined
+                     and "'" in rec.content.overview.en
+                  else 'N/A'
+                )
+              )
 
               'category': (
                 rec.primaryImpact.category
