@@ -21,7 +21,7 @@
       - google.iam.policy.Recommender
       - google.container.security.Recommender
 
-    teams_webhook_url: "<<<URL>>>"
+    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/94a679db1cd3403e82e75a8e1f0de0c7/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A0nYXR8b0pMuPINueyCynuAFw_VhCBR8sCticsENRlU"
 
   tasks:
 
