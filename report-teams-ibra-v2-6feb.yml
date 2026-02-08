@@ -68,18 +68,12 @@
   
               'category': rec.primaryImpact.category | default('OTHER'),
   
-              # =========================
-              # RESOURCE (SMART PICK)
-              # =========================
               'resource': (
-                # 1️⃣ IAM → tampilkan MEMBER
                 rec.content.overview.member
                 if rec.name is search('iam.policy')
                    and rec.content is defined
                    and rec.content.overview is defined
                    and rec.content.overview.member is defined
-  
-                # 2️⃣ Non-IAM → resource dari operationGroups
                 else
                 (
                   rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
@@ -93,9 +87,6 @@
                 )
               ),
   
-              # =========================
-              # SUMMARY (NEVER EMPTY)
-              # =========================
               'summary': (
                 rec.description
                 if rec.description is defined
@@ -114,6 +105,7 @@
     loop: "{{ parsed }}"
     loop_control:
       loop_var: rec
+
 
 
 
