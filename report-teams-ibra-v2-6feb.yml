@@ -56,7 +56,7 @@
     loop: "{{ rec_calls.results }}"
     when: item.stdout is defined and item.stdout | trim != "[]"
 
-  - name: Normalize recommendations (safe & readable)
+  - name: Normalize recommendations (improved & safe)
     set_fact:
       all_recommendations: >-
         {{
@@ -66,48 +66,45 @@
   
               'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
   
-              'category': (
-                rec.primaryImpact.category
-                if rec.primaryImpact is defined
-                else 'OTHER'
-              ),
+              'category': rec.primaryImpact.category | default('OTHER'),
   
+              # =========================
+              # RESOURCE (SMART PICK)
+              # =========================
               'resource': (
-                rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
-                if rec.content is defined
-                   and rec.content.operationGroups is defined
-                   and rec.content.operationGroups | length > 0
-                   and rec.content.operationGroups[0].operations | length > 0
-                   and rec.content.operationGroups[0].operations[0].resource is defined
-                   and '$' not in rec.content.operationGroups[0].operations[0].resource
-                   and rec.content.operationGroups[0].operations[0].resource | regex_search('^[0-9]+$') is none
+                # 1️⃣ IAM → tampilkan MEMBER
+                rec.content.overview.member
+                if rec.name is search('iam.policy')
+                   and rec.content is defined
+                   and rec.content.overview is defined
+                   and rec.content.overview.member is defined
+  
+                # 2️⃣ Non-IAM → resource dari operationGroups
                 else
                 (
-                  rec.content.overview.en
-                  | regex_search("'([^']+)'")
-                  | regex_replace("'", "")
+                  rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
                   if rec.content is defined
-                     and rec.content.overview is defined
-                     and rec.content.overview.en is defined
-                     and "'" in rec.content.overview.en
-                  else
-                  (
-                    'IAM Policy / Project-level'
-                    if rec.name is search('iam.policy')
-                    else 'N/A'
-                  )
+                     and rec.content.operationGroups is defined
+                     and rec.content.operationGroups | length > 0
+                     and rec.content.operationGroups[0].operations | length > 0
+                     and rec.content.operationGroups[0].operations[0].resource is defined
+                     and '$' not in rec.content.operationGroups[0].operations[0].resource
+                  else 'N/A'
                 )
               ),
   
+              # =========================
+              # SUMMARY (NEVER EMPTY)
+              # =========================
               'summary': (
-                rec.content.overview.en
-                if rec.content is defined
-                   and rec.content.overview is defined
-                   and rec.content.overview.en is defined
+                rec.description
+                if rec.description is defined
                 else
                 (
-                  rec.description
-                  if rec.description is defined
+                  rec.content.overview.en
+                  if rec.content is defined
+                     and rec.content.overview is defined
+                     and rec.content.overview.en is defined
                   else 'Recommendation detected'
                 )
               )
@@ -117,6 +114,7 @@
     loop: "{{ parsed }}"
     loop_control:
       loop_var: rec
+
 
 
   - name: Build Teams message
