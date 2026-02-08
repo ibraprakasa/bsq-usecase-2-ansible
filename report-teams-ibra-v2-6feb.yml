@@ -56,7 +56,7 @@
     loop: "{{ rec_calls.results }}"
     when: item.stdout is defined and item.stdout | trim != "[]"
 
-  - name: Normalize recommendations
+  - name: Normalize recommendations (safe & readable)
     set_fact:
       all_recommendations: >-
         {{
@@ -66,20 +66,40 @@
   
               'recommender': rec.name.split('/recommenders/')[1].split('/')[0],
   
+              'category': (
+                rec.primaryImpact.category
+                if rec.primaryImpact is defined
+                else 'OTHER'
+              ),
+  
               'resource': (
+                # 1️⃣ Prefer real resource from operationGroups
                 rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
                 if rec.content is defined
                    and rec.content.operationGroups is defined
                    and rec.content.operationGroups | length > 0
                    and rec.content.operationGroups[0].operations | length > 0
                    and rec.content.operationGroups[0].operations[0].resource is defined
-                else 'N/A'
-              ),
-  
-              'category': (
-                rec.primaryImpact.category
-                if rec.primaryImpact is defined
-                else 'OTHER'
+                   and '$' not in rec.content.operationGroups[0].operations[0].resource
+                   and rec.content.operationGroups[0].operations[0].resource | regex_search('^[0-9]+$') is none
+                else
+                # 2️⃣ Extract resource name from summary (quoted)
+                (
+                  rec.content.overview.en
+                  | regex_search("'([^']+)'")
+                  | regex_replace("'", "")
+                  if rec.content is defined
+                     and rec.content.overview is defined
+                     and rec.content.overview.en is defined
+                     and "'" in rec.content.overview.en
+                  else
+                  # 3️⃣ IAM / generic fallback
+                  (
+                    'IAM Policy / Project-level'
+                    if rec.name is search('iam.policy')
+                    else 'N/A'
+                  )
+                )
               ),
   
               'summary': (
