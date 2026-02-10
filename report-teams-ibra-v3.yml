@@ -49,20 +49,11 @@
       loop: "{{ rec_calls.results }}"
       when: item.stdout is defined and item.stdout | trim != "[]"
 
-    - name: Normalize recommendations (FINAL)
+    - name: Normalize recommendations (FINAL for Power Automate)
       set_fact:
         all_recommendations: "{{ all_recommendations | default([]) + [ rec_item ] }}"
       vars:
         rec_item:
-          id: "{{ rec.name.split('/')[-1] }}"
-          location: "{{ rec.name.split('/locations/')[1].split('/')[0] }}"
-          category: "{{ rec.primaryImpact.category | default('OTHER') }}"
-          resource: >-
-            {{
-              rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
-              if rec.content is defined
-              else 'N/A'
-            }}
           action: >-
             {{
               'resize_vm'
@@ -76,12 +67,47 @@
               else
               'ignore'
             }}
-          suggestion: "{{ rec.description | default('N/A') }}"
+    
+          resource: >-
+            {{
+              rec.content.overview.member
+              if rec.name is search('iam.policy')
+                 and rec.content is defined
+                 and rec.content.overview is defined
+                 and rec.content.overview.member is defined
+              else
+              (
+                rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
+                if rec.content is defined
+                   and rec.content.operationGroups is defined
+                   and rec.content.operationGroups | length > 0
+                   and rec.content.operationGroups[0].operations | length > 0
+                   and rec.content.operationGroups[0].operations[0].resource is defined
+                   and '$' not in rec.content.operationGroups[0].operations[0].resource
+                else 'N/A'
+              )
+            }}
+    
+          category: "{{ rec.primaryImpact.category | default('OTHER') }}"
+    
+          suggestion: >-
+            {{
+              rec.description
+              if rec.description is defined
+              else
+              (
+                rec.content.overview.en
+                if rec.content is defined
+                   and rec.content.overview is defined
+                   and rec.content.overview.en is defined
+                else 'Recommendation detected'
+              )
+            }}
       loop: "{{ parsed }}"
       loop_control:
         loop_var: rec
 
-    - name: Send data to Power Automate
+    - name: Send structured data to Power Automate
       uri:
         url: "{{ teams_webhook_url }}"
         method: POST
@@ -91,3 +117,5 @@
         body:
           project_id: "{{ project_id }}"
           recommendations: "{{ all_recommendations }}"
+        status_code: [200,202]
+
