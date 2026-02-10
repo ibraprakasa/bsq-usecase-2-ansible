@@ -1,0 +1,32 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    instance: "{{ resource }}"
+    zone: "{{ zone | default('asia-southeast2-a') }}"
+    machine_type: "{{ machine_type | default('e2-highmem-2') }}"
+
+  tasks:
+    - name: Show approved request
+      debug:
+        msg:
+          - "Instance: {{ instance }}"
+          - "Zone: {{ zone }}"
+          - "New machine type: {{ machine_type }}"
+          - "Approved by: {{ approved_by }}"
+
+    - name: Stop instance
+      command: >
+        gcloud compute instances stop {{ instance }}
+        --zone {{ zone }}
+
+    - name: Resize instance
+      command: >
+        gcloud compute instances set-machine-type {{ instance }}
+        --zone {{ zone }}
+        --machine-type {{ machine_type }}
+
+    - name: Start instance
+      command: >
+        gcloud compute instances start {{ instance }}
+        --zone {{ zone }}
