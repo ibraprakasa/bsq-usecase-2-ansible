@@ -50,11 +50,14 @@
       changed_when: false
       failed_when: false
 
-    - name: Collect results
+    - name: Collect results (SAFE)
       set_fact:
         parsed: "{{ parsed | default([]) + (item.stdout | from_json) }}"
       loop: "{{ rec_calls.results }}"
-      when: item.stdout is defined and item.stdout | trim != "[]"
+      when:
+        - item.stdout is defined
+        - (item.stdout | from_json | length) > 0
+
 
     - name: Normalize recommendations (FINAL for Power Automate)
       set_fact:
@@ -113,6 +116,15 @@
       loop: "{{ parsed }}"
       loop_control:
         loop_var: rec
+
+    - name: DEBUG parsed
+      debug:
+        var: parsed
+    
+    - name: DEBUG all_recommendations
+      debug:
+        var: all_recommendations
+
 
     - name: Send structured data to Power Automate
       uri:
