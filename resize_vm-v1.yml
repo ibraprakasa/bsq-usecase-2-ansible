@@ -7,12 +7,19 @@
     machine_type: "{{ machine_type | default('e2-highmem-2') }}"
 
   tasks:
-    - name: Show approved request
+    - name: Validate input
+      assert:
+        that:
+          - instance is defined
+          - machine_type is defined
+
+    - name: Audit log
       debug:
         msg:
+          - "APPROVED ACTION: resize_vm"
           - "Instance: {{ instance }}"
           - "Zone: {{ zone }}"
-          - "New machine type: {{ machine_type }}"
+          - "New type: {{ machine_type }}"
           - "Approved by: {{ approved_by }}"
 
     - name: Stop instance
