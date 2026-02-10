@@ -1,0 +1,128 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "joey-preprod-project"
+
+    recommenders:
+      # COST
+      - google.compute.image.IdleResourceRecommender
+      - google.compute.disk.IdleResourceRecommender
+
+      # PERFORMANCE
+      - google.compute.instance.MachineTypeRecommender
+      - google.cloudsql.instance.PerformanceRecommender
+
+      # RELIABILITY
+      - google.compute.instanceAvailability.Recommender
+
+      # SECURITY
+      - google.compute.firewall.SecurityRecommender
+      - google.iam.policy.Recommender
+      - google.container.security.Recommender
+
+    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/94a679db1cd3403e82e75a8e1f0de0c7/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A0nYXR8b0pMuPINueyCynuAFw_VhCBR8sCticsENRlU"
+
+  tasks:
+
+  - name: Write GCP SA
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
+
+  - name: Auth GCP
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
+
+  - set_fact:
+      locations: ['global', 'asia-southeast2-a', 'asia-southeast2']
+
+  - name: Run recommender API
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location {{ item.0 }}
+      --recommender {{ item.1 }}
+      --format=json
+    loop: "{{ locations | product(recommenders) | list }}"
+    register: rec_calls
+    failed_when: false
+    changed_when: false
+
+  - name: Parse results
+    set_fact:
+      parsed: "{{ parsed | default([]) + (item.stdout | from_json) }}"
+    loop: "{{ rec_calls.results }}"
+    when: item.stdout is defined and item.stdout | trim != "[]"
+
+  - name: Normalize recommendations
+    set_fact:
+      all_recommendations: >-
+        {{
+          all_recommendations | default([]) + [
+            {
+              'id': rec.name.split('/')[-1],
+              'location': rec.name.split('/locations/')[1].split('/')[0],
+              'category': rec.primaryImpact.category | default('OTHER'),
+              'resource': (
+                rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
+                if rec.content is defined
+                else 'N/A'
+              ),
+              'action': (
+                'resize_vm'
+                if rec.name is search('MachineTypeRecommender')
+                else
+                'delete_image'
+                if rec.name is search('image')
+                else
+                'update_iam'
+                if rec.name is search('iam.policy')
+                else
+                'unknown'
+              ),
+              'suggested': rec.description | default('N/A')
+            }
+          ]
+        }}
+    loop: "{{ parsed }}"
+    loop_control:
+      loop_var: rec
+
+  - name: Build Teams message
+    set_fact:
+      teams_message: |
+        <b>🔍 GCP Recommender Report</b><br>
+        <b>Project:</b> {{ project_id }}<br>
+        <b>Time:</b> {{ lookup('pipe','TZ=Asia/Jakarta date "+%Y-%m-%d %H:%M:%S"') }} WIB<br><br>
+
+        <b>SUMMARY</b><br>
+        Total: {{ all_recommendations | length }}<br>
+        💰 Cost: {{ all_recommendations | selectattr('category','equalto','COST') | list | length }}<br>
+        ⚡ Performance: {{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}<br>
+        🔐 Security: {{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}<br>
+        🧱 Reliability: {{ all_recommendations | selectattr('category','equalto','RELIABILITY') | list | length }}<br><br>
+
+        <b>FINDINGS</b><br>
+        {% for r in all_recommendations %}
+        • ({{ r.location }}) [{{ r.category }}]<br>
+        Resource: {{ r.resource }}<br>
+        {{ r.summary }}<br><br>
+        {% endfor %}
+
+  - name: Send structured data to Power Automate
+    uri:
+      url: "{{ teams_webhook_url }}"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body_format: json
+      body:
+        project_id: "{{ project_id }}"
+        summary:
+          total: "{{ all_recommendations | length }}"
+          cost: "{{ all_recommendations | selectattr('category','equalto','COST') | list | length }}"
+          performance: "{{ all_recommendations | selectattr('category','equalto','PERFORMANCE') | list | length }}"
+          security: "{{ all_recommendations | selectattr('category','equalto','SECURITY') | list | length }}"
+        recommendations: "{{ all_recommendations }}"
