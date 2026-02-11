@@ -1,0 +1,138 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "joey-preprod-project"
+    zone: "asia-southeast2-a"
+    region: "asia-southeast2"
+
+    dry_run: true   # 🔥 ubah ke false kalau mau eksekusi real
+
+  tasks:
+
+  #################################################################
+  # AUTH
+  #################################################################
+
+  - name: Authenticate to GCP
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
+
+
+  #################################################################
+  # 1️⃣ COMPUTE ENGINE RIGHT-SIZER
+  #################################################################
+
+  - name: Get VM machine type recommendations
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location {{ zone }}
+      --recommender google.compute.instance.MachineTypeRecommender
+      --format=json
+    register: vm_recs_raw
+    changed_when: false
+    failed_when: false
+
+  - name: Parse VM recommendations
+    set_fact:
+      vm_recs: "{{ vm_recs_raw.stdout | from_json }}"
+    when: vm_recs_raw.stdout != ""
+
+  - name: Process VM resize recommendations
+    when: vm_recs is defined and vm_recs | length > 0
+    loop: "{{ vm_recs }}"
+    loop_control:
+      loop_var: rec
+    block:
+
+      - name: Extract instance name
+        set_fact:
+          instance_name: "{{ rec.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+
+      - name: Extract target machine type
+        set_fact:
+          target_machine_type: "{{ rec.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
+
+      - name: Show resize plan
+        debug:
+          msg: "Resize VM {{ instance_name }} → {{ target_machine_type }}"
+
+      - name: Stop instance
+        when: not dry_run
+        command: >
+          gcloud compute instances stop {{ instance_name }}
+          --zone {{ zone }}
+          --project {{ project_id }}
+
+      - name: Resize instance
+        when: not dry_run
+        command: >
+          gcloud compute instances set-machine-type {{ instance_name }}
+          --machine-type {{ target_machine_type }}
+          --zone {{ zone }}
+          --project {{ project_id }}
+
+      - name: Start instance
+        when: not dry_run
+        command: >
+          gcloud compute instances start {{ instance_name }}
+          --zone {{ zone }}
+          --project {{ project_id }}
+
+      - name: Mark VM recommendation succeeded
+        when: not dry_run
+        command: >
+          gcloud recommender recommendations mark-succeeded {{ rec.name }}
+          --project {{ project_id }}
+          --location {{ zone }}
+
+
+  #################################################################
+  # 2️⃣ CLOUD SQL RIGHT-SIZER
+  #################################################################
+
+  - name: Get Cloud SQL performance recommendations
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location {{ region }}
+      --recommender google.cloudsql.instance.PerformanceRecommender
+      --format=json
+    register: sql_recs_raw
+    changed_when: false
+    failed_when: false
+
+  - name: Parse SQL recommendations
+    set_fact:
+      sql_recs: "{{ sql_recs_raw.stdout | from_json }}"
+    when: sql_recs_raw.stdout != ""
+
+  - name: Process Cloud SQL resize recommendations
+    when: sql_recs is defined and sql_recs | length > 0
+    loop: "{{ sql_recs }}"
+    loop_control:
+      loop_var: rec
+    block:
+
+      - name: Extract SQL instance name
+        set_fact:
+          sql_instance: "{{ rec.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+
+      - name: Extract target SQL tier
+        set_fact:
+          target_tier: "{{ rec.content.operationGroups[0].operations[0].value.settings.tier }}"
+
+      - name: Show SQL resize plan
+        debug:
+          msg: "Resize SQL {{ sql_instance }} → {{ target_tier }}"
+
+      - name: Patch SQL instance
+        when: not dry_run
+        command: >
+          gcloud sql instances patch {{ sql_instance }}
+          --tier={{ target_tier }}
+          --project {{ project_id }}
+          --quiet
+
+      - name: Mark SQL recommendation succeeded
