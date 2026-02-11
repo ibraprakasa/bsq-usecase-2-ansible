@@ -179,7 +179,7 @@
   ###############################################################
   # PROCESS SQL DOWNSIZE ONLY
   ###############################################################
-  
+
   - name: Get current SQL tier
     command: >
       gcloud sql instances describe {{
@@ -188,7 +188,13 @@
       --format="value(settings.tier)"
     register: current_sql_raw
     loop: "{{ sql_recs | default([]) }}"
+    when:
+      - item.content.operationGroups is defined
+      - item.content.operationGroups[0].operations[0].value is defined
+      - item.content.operationGroups[0].operations[0].value.settings is defined
+      - item.content.operationGroups[0].operations[0].value.settings.tier is defined
     changed_when: false
+
   
   - name: Show SQL downsize plan
     vars:
