@@ -113,6 +113,19 @@
                 else 'Recommendation detected'
               )
             }}
+
+          target_machine_type: >-
+            {{
+              rec.content.operationGroups[0].operations[0].value.machineType.split('/')[-1]
+              if rec.name is search('MachineTypeRecommender')
+                 and rec.content.operationGroups is defined
+                 and rec.content.operationGroups | length > 0
+                 and rec.content.operationGroups[0].operations | length > 0
+                 and rec.content.operationGroups[0].operations[0].value is defined
+                 and rec.content.operationGroups[0].operations[0].value.machineType is defined
+              else ''
+            }}
+
       loop: "{{ parsed }}"
       loop_control:
         loop_var: rec
