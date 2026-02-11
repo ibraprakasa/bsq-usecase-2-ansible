@@ -6,7 +6,7 @@
     zone: "asia-southeast2-a"
     region: "asia-southeast2"
 
-    dry_run: true   # 🔥 ubah ke false kalau mau eksekusi real
+    dry_run: true   
 
   tasks:
 
