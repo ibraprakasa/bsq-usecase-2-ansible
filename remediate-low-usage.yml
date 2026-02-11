@@ -44,9 +44,19 @@
       vm_recs: "{{ vm_recs_raw.stdout | from_json }}"
     when: vm_recs_raw.stdout | length > 0
 
+  - name: Debug raw VM recommendations
+    debug:
+      var: vm_recs
+
+
   ###############################################################
   # PROCESS VM DOWNSIZE ONLY
   ###############################################################
+
+  - name: Initialize result list
+    set_fact:
+      downsize_report: []
+
   
   - name: Get current machine type
     command: >
@@ -59,7 +69,25 @@
     loop: "{{ vm_recs | default([]) }}"
     changed_when: false
   
-  - name: Show VM downsize plan
+  - name: Evaluate VM recommendation
+    vars:
+      instance_name: "{{ item.item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+      target_machine_type: "{{ item.item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
+      current_machine_type: "{{ item.stdout.split('/')[-1] }}"
+      current_cpu: "{{ current_machine_type.split('-')[-1] | int }}"
+      target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
+      decision: "{{ 'DOWNSIZE' if target_cpu < current_cpu else 'SKIP' }}"
+    loop: "{{ current_type_raw.results | default([]) }}"
+    register: vm_eval
+    debug:
+      msg: |
+        === VM RECOMMENDATION ===
+        Instance : {{ instance_name }}
+        Current  : {{ current_machine_type }}
+        Target   : {{ target_machine_type }}
+        Decision : {{ decision }}
+
+  - name: Append VM evaluation to report
     vars:
       instance_name: "{{ item.item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
       target_machine_type: "{{ item.item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
@@ -67,9 +95,15 @@
       current_cpu: "{{ current_machine_type.split('-')[-1] | int }}"
       target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
     loop: "{{ current_type_raw.results | default([]) }}"
-    when: target_cpu < current_cpu
-    debug:
-      msg: "DOWNSIZE VM {{ instance_name }} ({{ current_machine_type }} → {{ target_machine_type }})"
+    set_fact:
+      downsize_report: "{{ downsize_report + [ {
+        'resource': instance_name,
+        'current': current_machine_type,
+        'target': target_machine_type,
+        'action': 'downsize' if target_cpu < current_cpu else 'skip'
+      } ] }}"
+
+
   
   - name: Stop VM
     vars:
@@ -184,3 +218,9 @@
       --tier={{ target_tier }}
       --project {{ project_id }}
       --quiet
+
+  - name: Save report to artifact
+    copy:
+      content: "{{ downsize_report | to_nice_json }}"
+      dest: "/runner/artifacts/downsize_report.json"
+
