@@ -1,0 +1,140 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "joey-preprod-project"
+    locations:
+      - global
+      - asia-southeast2-a
+      - asia-southeast2
+
+    recommenders:
+      # COST
+      - google.compute.image.IdleResourceRecommender
+      - google.compute.disk.IdleResourceRecommender
+
+      # PERFORMANCE
+      - google.compute.instance.MachineTypeRecommender
+      - google.cloudsql.instance.PerformanceRecommender
+
+      # RELIABILITY
+      - google.compute.instanceAvailability.Recommender
+
+      # SECURITY
+      - google.compute.firewall.SecurityRecommender
+      - google.iam.policy.Recommender
+      - google.container.security.Recommender
+
+    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/7c04326d37a64089badfcd62f0176737/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=8PTg2NuHVi98-k2cTNCYG6AVuw_5e-X_UFYsbtzlEog"
+
+  tasks:
+    - name: Write GCP SA
+      copy:
+        content: "{{ gcp_sa_key }}"
+        dest: /tmp/gcp-sa.json
+        mode: '0600'
+
+    - name: Auth GCP
+      command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+      changed_when: false
+
+    - name: Run recommender API
+      command: >
+        gcloud recommender recommendations list
+        --project {{ project_id }}
+        --location {{ item.0 }}
+        --recommender {{ item.1 }}
+        --format=json
+      loop: "{{ locations | product(recommenders) | list }}"
+      register: rec_calls
+      changed_when: false
+      failed_when: false
+
+    - name: Collect results (SAFE)
+      set_fact:
+        parsed: "{{ parsed | default([]) + (item.stdout | from_json) }}"
+      loop: "{{ rec_calls.results }}"
+      when:
+        - item.stdout is defined
+        - (item.stdout | from_json | length) > 0
+
+
+    - name: Normalize recommendations (FINAL for Power Automate)
+      set_fact:
+        all_recommendations: "{{ all_recommendations | default([]) + [ rec_item ] }}"
+      vars:
+        rec_item:
+          action: >-
+            {{
+              'resize_vm'
+              if rec.name is search('MachineTypeRecommender')
+              else
+              'delete_image'
+              if rec.name is search('image')
+              else
+              'update_iam'
+              if rec.name is search('iam.policy')
+              else
+              'ignore'
+            }}
+    
+          resource: >-
+            {{
+              rec.content.overview.member
+              if rec.name is search('iam.policy')
+                 and rec.content is defined
+                 and rec.content.overview is defined
+                 and rec.content.overview.member is defined
+              else
+              (
+                rec.content.operationGroups[0].operations[0].resource.split('/')[-1]
+                if rec.content is defined
+                   and rec.content.operationGroups is defined
+                   and rec.content.operationGroups | length > 0
+                   and rec.content.operationGroups[0].operations | length > 0
+                   and rec.content.operationGroups[0].operations[0].resource is defined
+                   and '$' not in rec.content.operationGroups[0].operations[0].resource
+                else 'N/A'
+              )
+            }}
+    
+          category: "{{ rec.primaryImpact.category | default('OTHER') }}"
+    
+          suggestion: >-
+            {{
+              rec.description
+              if rec.description is defined
+              else
+              (
+                rec.content.overview.en
+                if rec.content is defined
+                   and rec.content.overview is defined
+                   and rec.content.overview.en is defined
+                else 'Recommendation detected'
+              )
+            }}
+      loop: "{{ parsed }}"
+      loop_control:
+        loop_var: rec
+
+    - name: DEBUG parsed
+      debug:
+        var: parsed
+    
+    - name: DEBUG all_recommendations
+      debug:
+        var: all_recommendations
+
+
+    - name: Send structured data to Power Automate
+      uri:
+        url: "{{ teams_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          project_id: "{{ project_id }}"
+          recommendations: "{{ all_recommendations }}"
+        status_code: [200,202]
+
