@@ -6,24 +6,30 @@
     zone: "asia-southeast2-a"
     region: "asia-southeast2"
 
-    dry_run: true   # 🔥 ubah ke false kalau mau eksekusi real
+    dry_run: true   # 🔥 default SAFE mode
 
   tasks:
 
-  #################################################################
-  # AUTH
-  #################################################################
+  ###############################################################
+  # 0️⃣ CREATE TEMP SERVICE ACCOUNT FILE
+  ###############################################################
+
+  - name: Write GCP Service Account JSON
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
 
   - name: Authenticate to GCP
     command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
     changed_when: false
 
 
-  #################################################################
-  # 1️⃣ COMPUTE ENGINE RIGHT-SIZER
-  #################################################################
+  ###############################################################
+  # 1️⃣ COMPUTE ENGINE — DOWNSIZE ONLY
+  ###############################################################
 
-  - name: Get VM machine type recommendations
+  - name: Get MachineType recommendations
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
@@ -39,7 +45,7 @@
       vm_recs: "{{ vm_recs_raw.stdout | from_json }}"
     when: vm_recs_raw.stdout != ""
 
-  - name: Process VM resize recommendations
+  - name: Process VM downsize recommendations
     when: vm_recs is defined and vm_recs | length > 0
     loop: "{{ vm_recs }}"
     loop_control:
@@ -54,19 +60,44 @@
         set_fact:
           target_machine_type: "{{ rec.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
 
-      - name: Show resize plan
+      - name: Get current machine type
+        command: >
+          gcloud compute instances describe {{ instance_name }}
+          --zone {{ zone }}
+          --project {{ project_id }}
+          --format="value(machineType)"
+        register: current_type_raw
+        changed_when: false
+
+      - name: Extract current machine type
+        set_fact:
+          current_machine_type: "{{ current_type_raw.stdout.split('/')[-1] }}"
+
+      - name: Extract CPU size
+        set_fact:
+          current_cpu: "{{ current_machine_type.split('-')[-1] | int }}"
+          target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
+
+      - name: Show downsize plan
+        when: target_cpu < current_cpu
         debug:
-          msg: "Resize VM {{ instance_name }} → {{ target_machine_type }}"
+          msg: >
+            DOWNSIZE VM {{ instance_name }}
+            ({{ current_machine_type }} → {{ target_machine_type }})
 
       - name: Stop instance
-        when: not dry_run
+        when:
+          - not dry_run
+          - target_cpu < current_cpu
         command: >
           gcloud compute instances stop {{ instance_name }}
           --zone {{ zone }}
           --project {{ project_id }}
 
       - name: Resize instance
-        when: not dry_run
+        when:
+          - not dry_run
+          - target_cpu < current_cpu
         command: >
           gcloud compute instances set-machine-type {{ instance_name }}
           --machine-type {{ target_machine_type }}
@@ -74,25 +105,29 @@
           --project {{ project_id }}
 
       - name: Start instance
-        when: not dry_run
+        when:
+          - not dry_run
+          - target_cpu < current_cpu
         command: >
           gcloud compute instances start {{ instance_name }}
           --zone {{ zone }}
           --project {{ project_id }}
 
-      - name: Mark VM recommendation succeeded
-        when: not dry_run
+      - name: Mark recommendation succeeded
+        when:
+          - not dry_run
+          - target_cpu < current_cpu
         command: >
           gcloud recommender recommendations mark-succeeded {{ rec.name }}
           --project {{ project_id }}
           --location {{ zone }}
 
 
-  #################################################################
-  # 2️⃣ CLOUD SQL RIGHT-SIZER
-  #################################################################
+  ###############################################################
+  # 2️⃣ CLOUD SQL — DOWNSIZE ONLY
+  ###############################################################
 
-  - name: Get Cloud SQL performance recommendations
+  - name: Get Cloud SQL recommendations
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
@@ -108,7 +143,7 @@
       sql_recs: "{{ sql_recs_raw.stdout | from_json }}"
     when: sql_recs_raw.stdout != ""
 
-  - name: Process Cloud SQL resize recommendations
+  - name: Process SQL downsize recommendations
     when: sql_recs is defined and sql_recs | length > 0
     loop: "{{ sql_recs }}"
     loop_control:
@@ -119,16 +154,34 @@
         set_fact:
           sql_instance: "{{ rec.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
 
-      - name: Extract target SQL tier
+      - name: Extract target tier
         set_fact:
           target_tier: "{{ rec.content.operationGroups[0].operations[0].value.settings.tier }}"
 
-      - name: Show SQL resize plan
+      - name: Get current SQL tier
+        command: >
+          gcloud sql instances describe {{ sql_instance }}
+          --project {{ project_id }}
+          --format="value(settings.tier)"
+        register: current_sql_raw
+        changed_when: false
+
+      - name: Extract CPU comparison (simple compare)
+        set_fact:
+          current_cpu: "{{ current_sql_raw.stdout.split('-')[2] | int }}"
+          target_cpu: "{{ target_tier.split('-')[2] | int }}"
+
+      - name: Show SQL downsize plan
+        when: target_cpu < current_cpu
         debug:
-          msg: "Resize SQL {{ sql_instance }} → {{ target_tier }}"
+          msg: >
+            DOWNSIZE SQL {{ sql_instance }}
+            ({{ current_sql_raw.stdout }} → {{ target_tier }})
 
       - name: Patch SQL instance
-        when: not dry_run
+        when:
+          - not dry_run
+          - target_cpu < current_cpu
         command: >
           gcloud sql instances patch {{ sql_instance }}
           --tier={{ target_tier }}
@@ -136,7 +189,9 @@
           --quiet
 
       - name: Mark SQL recommendation succeeded
-        when: not dry_run
+        when:
+          - not dry_run
+          - target_cpu < current_cpu
         command: >
           gcloud recommender recommendations mark-succeeded {{ rec.name }}
           --project {{ project_id }}
