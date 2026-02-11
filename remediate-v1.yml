@@ -6,7 +6,7 @@
     zone: "asia-southeast2-a"
     region: "asia-southeast2"
 
-    dry_run: true   
+    dry_run: true   # 🔥 ubah ke false kalau mau eksekusi real
 
   tasks:
 
@@ -136,3 +136,8 @@
           --quiet
 
       - name: Mark SQL recommendation succeeded
+        when: not dry_run
+        command: >
+          gcloud recommender recommendations mark-succeeded {{ rec.name }}
+          --project {{ project_id }}
+          --location {{ region }}
