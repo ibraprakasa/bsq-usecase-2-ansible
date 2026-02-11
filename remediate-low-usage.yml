@@ -6,12 +6,12 @@
     zone: "asia-southeast2-a"
     region: "asia-southeast2"
 
-    dry_run: true   # 🔥 default SAFE mode
+    dry_run: true   # SAFE MODE (tidak akan eksekusi)
 
   tasks:
 
   ###############################################################
-  # 0️⃣ CREATE TEMP SERVICE ACCOUNT FILE
+  # 0️⃣ CREATE TEMP SERVICE ACCOUNT
   ###############################################################
 
   - name: Write GCP Service Account JSON
@@ -26,7 +26,7 @@
 
 
   ###############################################################
-  # 1️⃣ COMPUTE ENGINE — DOWNSIZE ONLY
+  # 1️⃣ GET VM MACHINE TYPE RECOMMENDATIONS
   ###############################################################
 
   - name: Get MachineType recommendations
@@ -43,22 +43,24 @@
   - name: Parse VM recommendations
     set_fact:
       vm_recs: "{{ vm_recs_raw.stdout | from_json }}"
-    when: vm_recs_raw.stdout != ""
+    when: vm_recs_raw.stdout | length > 0
 
-  - name: Process VM downsize recommendations
-    when: vm_recs is defined and vm_recs | length > 0
+
+  ###############################################################
+  # 2️⃣ DOWNSIZE VMs (LOW USAGE ONLY)
+  ###############################################################
+
+  - name: Process VM recommendations (downsize only)
+    when: vm_recs is defined
     loop: "{{ vm_recs }}"
     loop_control:
       loop_var: rec
+
+    vars:
+      instance_name: "{{ rec.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+      target_machine_type: "{{ rec.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
+
     block:
-
-      - name: Extract instance name
-        set_fact:
-          instance_name: "{{ rec.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-
-      - name: Extract target machine type
-        set_fact:
-          target_machine_type: "{{ rec.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
 
       - name: Get current machine type
         command: >
@@ -69,13 +71,10 @@
         register: current_type_raw
         changed_when: false
 
-      - name: Extract current machine type
+      - name: Extract CPU comparison
         set_fact:
           current_machine_type: "{{ current_type_raw.stdout.split('/')[-1] }}"
-
-      - name: Extract CPU size
-        set_fact:
-          current_cpu: "{{ current_machine_type.split('-')[-1] | int }}"
+          current_cpu: "{{ current_type_raw.stdout.split('/')[-1].split('-')[-1] | int }}"
           target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
 
       - name: Show downsize plan
@@ -124,7 +123,7 @@
 
 
   ###############################################################
-  # 2️⃣ CLOUD SQL — DOWNSIZE ONLY
+  # 3️⃣ CLOUD SQL – DOWNSIZE ONLY
   ###############################################################
 
   - name: Get Cloud SQL recommendations
@@ -141,22 +140,20 @@
   - name: Parse SQL recommendations
     set_fact:
       sql_recs: "{{ sql_recs_raw.stdout | from_json }}"
-    when: sql_recs_raw.stdout != ""
+    when: sql_recs_raw.stdout | length > 0
 
-  - name: Process SQL downsize recommendations
-    when: sql_recs is defined and sql_recs | length > 0
+
+  - name: Process SQL recommendations (downsize only)
+    when: sql_recs is defined
     loop: "{{ sql_recs }}"
     loop_control:
       loop_var: rec
+
+    vars:
+      sql_instance: "{{ rec.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+      target_tier: "{{ rec.content.operationGroups[0].operations[0].value.settings.tier }}"
+
     block:
-
-      - name: Extract SQL instance name
-        set_fact:
-          sql_instance: "{{ rec.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-
-      - name: Extract target tier
-        set_fact:
-          target_tier: "{{ rec.content.operationGroups[0].operations[0].value.settings.tier }}"
 
       - name: Get current SQL tier
         command: >
@@ -166,7 +163,7 @@
         register: current_sql_raw
         changed_when: false
 
-      - name: Extract CPU comparison (simple compare)
+      - name: Compare CPU (simple tier compare)
         set_fact:
           current_cpu: "{{ current_sql_raw.stdout.split('-')[2] | int }}"
           target_cpu: "{{ target_tier.split('-')[2] | int }}"
