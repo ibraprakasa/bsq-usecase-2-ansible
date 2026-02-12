@@ -156,7 +156,8 @@
     set_fact:
       teams_message: |
         🚨 <b>GCP HIGH USAGE ALERT</b><br>
-        <b>Project:</b> {{ project_id }}<br><br>
+        <b>Project:</b> {{ project_id }}<br>
+        <b>Detected:</b> {{ exec_time }}<br><br>
   
         ━━━━━━━━━━━━━━━━━━━━━━<br>
   
@@ -166,10 +167,9 @@
         {% else %}
         {% for v in vm_high %}
         🔹 <b>{{ v.instance }}</b><br>
-        • Severity: {{ v.severity }} ({{ v.priority }})<br>
+        • Severity: {{ v.severity | default('ℹ Info') }} ({{ v.priority | default('N/A') }})<br>
         • Current Type: {{ v.current }}<br>
         • Suggested Type: {{ v.suggested }}<br>
-        • Impact: PERFORMANCE<br>
         • Console: <a href="{{ v.console_link }}">Open VM</a><br><br>
         {% endfor %}
         {% endif %}
@@ -182,9 +182,9 @@
         {% else %}
         {% for s in sql_high %}
         🔹 <b>{{ s.instance }}</b><br>
-        • Severity: {{ s.severity }} ({{ s.priority }})<br>
+        • Severity: {{ s.severity | default('ℹ Info') }} ({{ s.priority | default('N/A') }})<br>
         • Engine: {{ s.engine }}<br>
-        • Impact: {{ s.impact }}<br>
+        • Impact: {{ s.impact | default('PERFORMANCE') }}<br>
         • Issue: {{ s.short_issue }}<br>
         • Console: <a href="{{ s.console_link }}">Open SQL</a><br><br>
         {% endfor %}
@@ -195,34 +195,8 @@
         • VM High Usage: {{ vm_high | length }}<br>
         • SQL High Usage: {{ sql_high | length }}<br><br>
   
-        ℹ <i>Investigate resources marked 🔥 or ⚠ immediately.</i>
+        ℹ <i>Investigate 🔥 and ⚠ resources immediately.</i>
 
-  
-        <b>━━━━━━━━━━━━━━━━━━━━━━</b><br>
-  
-        <b>🗄 CLOUD SQL PERFORMANCE</b><br>
-        {% if sql_high | length == 0 %}
-        ✅ No SQL performance risk detected.<br><br>
-        {% else %}
-        {% for s in sql_high %}
-        ⚠ <b>{{ s.instance }}</b><br>
-        • Priority: <b>{{ s.priority }}</b><br>
-        • Engine: {{ s.engine }}<br>
-        • Issue: {{ s.short_issue }}<br>
-        • Recommendation: Review memory configuration.<br>
-        {% if s.link is defined %}
-        • Console: <a href="{{ s.link }}">Open in GCP</a><br>
-        {% endif %}
-        <br>
-        {% endfor %}
-        {% endif %}
-  
-        <b>━━━━━━━━━━━━━━━━━━━━━━</b><br>
-        📊 <b>Summary</b><br>
-        • VM High Usage: {{ vm_high | length }}<br>
-        • SQL High Usage: {{ sql_high | length }}<br><br>
-  
-        ℹ <i>Review resources marked with 🔥 or ⚠ for immediate investigation.</i>
 
 
 
