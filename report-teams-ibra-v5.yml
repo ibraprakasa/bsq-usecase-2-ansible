@@ -6,7 +6,7 @@
     zone: "asia-southeast2-a"
     region: "asia-southeast2"
 
-    teams_webhook_url: "https://outlook.office.com/webhook/XXXXX"   # GANTI webhook kamu
+    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/7c04326d37a64089badfcd62f0176737/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=8PTg2NuHVi98-k2cTNCYG6AVuw_5e-X_UFYsbtzlEog"   # GANTI webhook kamu
 
   tasks:
 
