@@ -208,3 +208,14 @@
       body_format: json
       body:
         text: "{{ teams_message }}"
+
+  - name: Save combined report
+    copy:
+      content: >
+        {{
+          {
+            "vm": vm_report,
+            "sql": sql_report
+          } | to_nice_json
+        }}
+      dest: "/runner/artifacts/low_usage_report.json"
