@@ -3,14 +3,13 @@
 
   vars:
     project_id: "joey-preprod-project"
-    zone: "asia-southeast2-a"
-    region: "asia-southeast2"
-    dry_run: true   # SAFE MODE
+
+    teams_webhook_url: "https://outlook.office.com/webhook/XXXXX"   # GANTI webhook kamu
 
   tasks:
 
   ###############################################################
-  # CREATE SERVICE ACCOUNT FILE
+  # AUTHENTICATION
   ###############################################################
 
   - name: Write GCP Service Account JSON
@@ -23,210 +22,101 @@
     command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
     changed_when: false
 
-
   ###############################################################
-  # GET VM RECOMMENDATIONS
-  ###############################################################
-
-  - name: Get VM recommendations
-    command: >
-      gcloud recommender recommendations list
-      --project {{ project_id }}
-      --location {{ zone }}
-      --recommender google.compute.instance.MachineTypeRecommender
-      --format=json
-    register: vm_recs_raw
-    changed_when: false
-    failed_when: false
-
-  - name: Set VM list
-    set_fact:
-      vm_recs: "{{ vm_recs_raw.stdout | from_json }}"
-    when: vm_recs_raw.stdout | length > 0
-
-  - name: Debug raw VM recommendations
-    debug:
-      var: vm_recs
-
-
-  ###############################################################
-  # PROCESS VM DOWNSIZE ONLY
+  # VALIDATE SURVEY INPUT
   ###############################################################
 
-  - name: Initialize result list
-    set_fact:
-      downsize_report: []
+  - name: Validate survey input
+    assert:
+      that:
+        - instance is defined
+        - zone is defined
+        - machine_type is defined
+        - approved_by is defined
+      fail_msg: "Survey input missing"
 
-  
+  ###############################################################
+  # GET CURRENT MACHINE TYPE
+  ###############################################################
+
   - name: Get current machine type
     command: >
-      gcloud compute instances describe {{
-      item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}
+      gcloud compute instances describe {{ instance }}
       --zone {{ zone }}
       --project {{ project_id }}
       --format="value(machineType)"
-    register: current_type_raw
-    loop: "{{ vm_recs | default([]) }}"
+    register: current_type
     changed_when: false
-  
-  - name: Evaluate VM recommendation
-    vars:
-      instance_name: "{{ item.item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_machine_type: "{{ item.item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
-      current_machine_type: "{{ item.stdout.split('/')[-1] }}"
-      current_cpu: "{{ current_machine_type.split('-')[-1] | int }}"
-      target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
-      decision: "{{ 'DOWNSIZE' if target_cpu < current_cpu else 'SKIP' }}"
-    loop: "{{ current_type_raw.results | default([]) }}"
-    register: vm_eval
-    debug:
-      msg: |
-        === VM RECOMMENDATION ===
-        Instance : {{ instance_name }}
-        Current  : {{ current_machine_type }}
-        Target   : {{ target_machine_type }}
-        Decision : {{ decision }}
 
-  - name: Append VM evaluation to report
-    vars:
-      instance_name: "{{ item.item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_machine_type: "{{ item.item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
-      current_machine_type: "{{ item.stdout.split('/')[-1] }}"
-      current_cpu: "{{ current_machine_type.split('-')[-1] | int }}"
-      target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
-    loop: "{{ current_type_raw.results | default([]) }}"
+  - name: Extract current machine type
     set_fact:
-      downsize_report: "{{ downsize_report + [ {
-        'resource': instance_name,
-        'current': current_machine_type,
-        'target': target_machine_type,
-        'action': 'downsize' if target_cpu < current_cpu else 'skip'
-      } ] }}"
-
-
-  
-  - name: Stop VM
-    vars:
-      instance_name: "{{ item.item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_machine_type: "{{ item.item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
-      current_machine_type: "{{ item.stdout.split('/')[-1] }}"
-      current_cpu: "{{ current_machine_type.split('-')[-1] | int }}"
-      target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
-    loop: "{{ current_type_raw.results | default([]) }}"
-    when:
-      - not dry_run
-      - target_cpu < current_cpu
-    command: >
-      gcloud compute instances stop {{ instance_name }}
-      --zone {{ zone }}
-      --project {{ project_id }}
-  
-  - name: Resize VM
-    vars:
-      instance_name: "{{ item.item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_machine_type: "{{ item.item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
-      current_machine_type: "{{ item.stdout.split('/')[-1] }}"
-      current_cpu: "{{ current_machine_type.split('-')[-1] | int }}"
-      target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
-    loop: "{{ current_type_raw.results | default([]) }}"
-    when:
-      - not dry_run
-      - target_cpu < current_cpu
-    command: >
-      gcloud compute instances set-machine-type {{ instance_name }}
-      --machine-type {{ target_machine_type }}
-      --zone {{ zone }}
-      --project {{ project_id }}
-  
-  - name: Start VM
-    vars:
-      instance_name: "{{ item.item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_machine_type: "{{ item.item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
-      current_machine_type: "{{ item.stdout.split('/')[-1] }}"
-      current_cpu: "{{ current_machine_type.split('-')[-1] | int }}"
-      target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
-    loop: "{{ current_type_raw.results | default([]) }}"
-    when:
-      - not dry_run
-      - target_cpu < current_cpu
-    command: >
-      gcloud compute instances start {{ instance_name }}
-      --zone {{ zone }}
-      --project {{ project_id }}
-
-
+      current_machine_type: "{{ current_type.stdout.split('/')[-1] }}"
 
   ###############################################################
-  # GET SQL RECOMMENDATIONS
+  # AUDIT LOG
   ###############################################################
 
-  - name: Get SQL recommendations
-    command: >
-      gcloud recommender recommendations list
-      --project {{ project_id }}
-      --location {{ region }}
-      --recommender google.cloudsql.instance.PerformanceRecommender
-      --format=json
-    register: sql_recs_raw
-    changed_when: false
-    failed_when: false
-
-  - name: Set SQL list
-    set_fact:
-      sql_recs: "{{ sql_recs_raw.stdout | from_json }}"
-    when: sql_recs_raw.stdout | length > 0
-
-  ###############################################################
-  # PROCESS SQL DOWNSIZE ONLY
-  ###############################################################
-
-  - name: Get current SQL tier
-    command: >
-      gcloud sql instances describe {{
-      item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}
-      --project {{ project_id }}
-      --format="value(settings.tier)"
-    register: current_sql_raw
-    loop: "{{ sql_recs | default([]) }}"
-    when:
-      - item.content.operationGroups is defined
-      - item.content.operationGroups[0].operations[0].value is defined
-      - item.content.operationGroups[0].operations[0].value.settings is defined
-      - item.content.operationGroups[0].operations[0].value.settings.tier is defined
-    changed_when: false
-
-  
-  - name: Show SQL downsize plan
-    vars:
-      sql_instance: "{{ item.item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_tier: "{{ item.item.content.operationGroups[0].operations[0].value.settings.tier }}"
-      current_tier: "{{ item.stdout }}"
-      current_cpu: "{{ current_tier.split('-')[2] | int }}"
-      target_cpu: "{{ target_tier.split('-')[2] | int }}"
-    loop: "{{ current_sql_raw.results | default([]) }}"
-    when: target_cpu < current_cpu
+  - name: Audit info
     debug:
-      msg: "DOWNSIZE SQL {{ sql_instance }} ({{ current_tier }} → {{ target_tier }})"
-  
-  - name: Patch SQL
-    vars:
-      sql_instance: "{{ item.item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_tier: "{{ item.item.content.operationGroups[0].operations[0].value.settings.tier }}"
-      current_tier: "{{ item.stdout }}"
-      current_cpu: "{{ current_tier.split('-')[2] | int }}"
-      target_cpu: "{{ target_tier.split('-')[2] | int }}"
-    loop: "{{ current_sql_raw.results | default([]) }}"
-    when:
-      - not dry_run
-      - target_cpu < current_cpu
+      msg:
+        - "APPROVED ACTION: resize_vm"
+        - "Instance: {{ instance }}"
+        - "Zone: {{ zone }}"
+        - "Current: {{ current_machine_type }}"
+        - "Target: {{ machine_type }}"
+        - "Approved by: {{ approved_by }}"
+
+  ###############################################################
+  # RESIZE IF NEEDED
+  ###############################################################
+
+  - name: Stop instance
     command: >
-      gcloud sql instances patch {{ sql_instance }}
-      --tier={{ target_tier }}
+      gcloud compute instances stop {{ instance }}
+      --zone {{ zone }}
       --project {{ project_id }}
-      --quiet
+    when: current_machine_type != machine_type
 
-  - name: Save report to artifact
-    copy:
-      content: "{{ downsize_report | to_nice_json }}"
-      dest: "/runner/artifacts/downsize_report.json"
+  - name: Resize instance
+    command: >
+      gcloud compute instances set-machine-type {{ instance }}
+      --machine-type {{ machine_type }}
+      --zone {{ zone }}
+      --project {{ project_id }}
+    when: current_machine_type != machine_type
 
+  - name: Start instance
+    command: >
+      gcloud compute instances start {{ instance }}
+      --zone {{ zone }}
+      --project {{ project_id }}
+    when: current_machine_type != machine_type
+
+  ###############################################################
+  # RESULT
+  ###############################################################
+
+  - name: Set result
+    set_fact:
+      resize_status: >-
+        {{
+          "NO CHANGE - Already " + machine_type
+          if current_machine_type == machine_type
+          else
+          "SUCCESS - Resized from " + current_machine_type + " to " + machine_type
+        }}
+
+  - name: Send result to Teams
+    uri:
+      url: "{{ teams_webhook_url }}"
+      method: POST
+      body_format: json
+      body:
+        text: |
+          RESIZE RESULT
+          Instance: {{ instance }}
+          Zone: {{ zone }}
+          Old Type: {{ current_machine_type }}
+          New Type: {{ machine_type }}
+          Approved By: {{ approved_by }}
+          Status: {{ resize_status }}
