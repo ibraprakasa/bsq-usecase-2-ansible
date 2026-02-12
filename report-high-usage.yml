@@ -99,19 +99,20 @@
     set_fact:
       sql_high: []
 
-  - name: Append ACTIVE PERFORMANCE SQL recommendations
+  - name: Append SQL high usage
     set_fact:
       sql_high: "{{ sql_high + [ {
         'instance': item.content.overview.instanceName,
-        'description': item.description,
-        'priority': item.priority
+        'engine': item.content.overview.databaseEngine,
+        'priority': item.priority,
+        'short_issue': item.description.split('.')[0] ~ '.',
+        'link': item.content.overview.playbookLink
       } ] }}"
     loop: "{{ sql_recs }}"
     when:
       - item.primaryImpact is defined
       - item.primaryImpact.category == "PERFORMANCE"
       - item.stateInfo.state == "ACTIVE"
-      - item.content.overview.instanceName is defined
 
   ###############################################################
   # BUILD MESSAGE
@@ -120,34 +121,50 @@
   - name: Build Teams message
     set_fact:
       teams_message: |
-        🚨 <b>GCP HIGH USAGE REPORT</b><br>
-        <b>Project:</b> {{ project_id }}<br><br>
+        🚨 <b>GCP HIGH USAGE ALERT</b><br>
+        <b>Project:</b> {{ project_id }}<br>
+        <b>Detected at:</b> {{ ansible_date_time.iso8601 }}<br><br>
   
-        <b>=== VM SCALE-UP ===</b><br>
+        <b>━━━━━━━━━━━━━━━━━━━━━━</b><br>
+  
+        <b>🖥 VM SCALE-UP</b><br>
         {% if vm_high | length == 0 %}
-        No VM scale-up recommendation.<br>
+        ✅ No VM experiencing high CPU pressure.<br><br>
         {% else %}
         {% for v in vm_high %}
-        🔹 <b>{{ v.instance }}</b><br>
-        &nbsp;&nbsp;Current : {{ v.current }}<br>
-        &nbsp;&nbsp;Suggested: {{ v.suggested }}<br><br>
+        🔥 <b>{{ v.instance }}</b><br>
+        • Current Type: {{ v.current }}<br>
+        • Suggested Type: {{ v.suggested }}<br>
+        • Impact: Instance may be CPU constrained.<br><br>
         {% endfor %}
         {% endif %}
   
-        <b>=== CLOUD SQL PERFORMANCE ===</b><br>
+        <b>━━━━━━━━━━━━━━━━━━━━━━</b><br>
+  
+        <b>🗄 CLOUD SQL PERFORMANCE</b><br>
         {% if sql_high | length == 0 %}
-        No SQL performance recommendation.<br>
+        ✅ No SQL performance risk detected.<br><br>
         {% else %}
         {% for s in sql_high %}
-        🔹 <b>{{ s.instance }}</b><br>
-        &nbsp;&nbsp;Priority : {{ s.priority }}<br>
-        &nbsp;&nbsp;Issue    : {{ s.description }}<br><br>
+        ⚠ <b>{{ s.instance }}</b><br>
+        • Priority: <b>{{ s.priority }}</b><br>
+        • Engine: {{ s.engine }}<br>
+        • Issue: {{ s.short_issue }}<br>
+        • Recommendation: Review memory configuration.<br>
+        {% if s.link is defined %}
+        • Console: <a href="{{ s.link }}">Open in GCP</a><br>
+        {% endif %}
+        <br>
         {% endfor %}
         {% endif %}
   
-        <hr>
-        <b>Total VM:</b> {{ vm_high | length }}<br>
-        <b>Total SQL:</b> {{ sql_high | length }}
+        <b>━━━━━━━━━━━━━━━━━━━━━━</b><br>
+        📊 <b>Summary</b><br>
+        • VM High Usage: {{ vm_high | length }}<br>
+        • SQL High Usage: {{ sql_high | length }}<br><br>
+  
+        ℹ <i>Review resources marked with 🔥 or ⚠ for immediate investigation.</i>
+
 
 
   ###############################################################
