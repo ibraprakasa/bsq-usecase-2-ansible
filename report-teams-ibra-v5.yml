@@ -110,9 +110,18 @@
     register: sql_current_raw
     loop: "{{ sql_recs }}"
     changed_when: false
+    when:
+      - item.content.operationGroups is defined
+      - item.content.operationGroups | length > 0
+      - item.content.operationGroups[0].operations is defined
+      - item.content.operationGroups[0].operations | length > 0
+      - item.content.operationGroups[0].operations[0].value is defined
+      - item.content.operationGroups[0].operations[0].value is mapping
+      - item.content.operationGroups[0].operations[0].value.settings is defined
+      - item.content.operationGroups[0].operations[0].value.settings.tier is defined
 
   - name: Evaluate and append downsize SQL
-    loop: "{{ sql_current_raw.results }}"
+    loop: "{{ sql_current_raw.results | default([]) }}"
     loop_control:
       index_var: idx
     vars:
@@ -128,7 +137,10 @@
         'current': current_tier,
         'suggested': target_tier
       } ] }}"
-    when: target_cpu < current_cpu
+    when:
+      - item.stdout is defined
+      - target_cpu < current_cpu
+
 
 
   ###############################################################
