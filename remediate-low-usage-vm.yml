@@ -8,7 +8,7 @@
   tasks:
 
   ###############################################################
-  # AUTHENTICATION
+  # AUTH
   ###############################################################
 
   - name: Write GCP Service Account JSON
@@ -31,29 +31,34 @@
       --zone {{ zone }}
       --project {{ project_id }}
       --format="value(machineType)"
-    register: current_type
+    register: current_raw
     changed_when: false
 
-  - name: Extract current machine type
+  - name: Extract machine types
     set_fact:
-      current_machine_type: "{{ current_type.stdout.split('/')[-1] }}"
+      current_machine_type: "{{ current_raw.stdout.split('/')[-1] }}"
+      current_cpu: "{{ current_raw.stdout.split('/')[-1].split('-')[-1] | int }}"
+      target_cpu: "{{ machine_type.split('-')[-1] | int }}"
 
   ###############################################################
-  # AUDIT LOG
+  # DECISION LOGIC
   ###############################################################
 
-  - name: Audit log
+  - name: Decide if downsize allowed
+    set_fact:
+      allow_resize: "{{ target_cpu < current_cpu }}"
+
+  - name: Debug decision
     debug:
       msg:
-        - "ACTION: VM Resize"
-        - "Instance: {{ instance }}"
-        - "Zone: {{ zone }}"
-        - "Current: {{ current_machine_type }}"
-        - "Target: {{ machine_type }}"
-        - "Approved by: {{ approved_by }}"
+        - "Current Type: {{ current_machine_type }}"
+        - "Target Type: {{ machine_type }}"
+        - "Current CPU: {{ current_cpu }}"
+        - "Target CPU: {{ target_cpu }}"
+        - "Downsize Allowed: {{ allow_resize }}"
 
   ###############################################################
-  # RESIZE IF NEEDED
+  # RESIZE ONLY IF DOWNSIZE
   ###############################################################
 
   - name: Stop VM
@@ -61,7 +66,7 @@
       gcloud compute instances stop {{ instance }}
       --zone {{ zone }}
       --project {{ project_id }}
-    when: current_machine_type != machine_type
+    when: allow_resize
 
   - name: Resize VM
     command: >
@@ -69,14 +74,14 @@
       --machine-type {{ machine_type }}
       --zone {{ zone }}
       --project {{ project_id }}
-    when: current_machine_type != machine_type
+    when: allow_resize
 
   - name: Start VM
     command: >
       gcloud compute instances start {{ instance }}
       --zone {{ zone }}
       --project {{ project_id }}
-    when: current_machine_type != machine_type
+    when: allow_resize
 
   ###############################################################
   # RESULT
@@ -86,10 +91,10 @@
     set_fact:
       resize_status: >-
         {{
-          "NO CHANGE - Already " + machine_type
-          if current_machine_type == machine_type
+          "SKIPPED - Not a downsize operation"
+          if not allow_resize
           else
-          "SUCCESS - Resized from " + current_machine_type + " to " + machine_type
+          "SUCCESS - Downsized from " + current_machine_type + " to " + machine_type
         }}
 
   - name: Send result to Teams
@@ -99,10 +104,9 @@
       body_format: json
       body:
         text: |
-          VM RESIZE RESULT
+          VM LOW USAGE REMEDIATION
           Instance: {{ instance }}
-          Zone: {{ zone }}
           Old Type: {{ current_machine_type }}
-          New Type: {{ machine_type }}
+          Target: {{ machine_type }}
           Approved By: {{ approved_by }}
           Status: {{ resize_status }}
