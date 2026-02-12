@@ -102,17 +102,20 @@
   - name: Append SQL high usage
     set_fact:
       sql_high: "{{ sql_high + [ {
-        'instance': item.content.overview.instanceName,
-        'engine': item.content.overview.databaseEngine,
-        'priority': item.priority,
-        'severity': (
-          '🔥 Critical' if item.priority == 'P1'
-          else '⚠ High' if item.priority == 'P2'
-          else 'ℹ Medium'
-        ),
-        'short_issue': item.description.split('.')[0] ~ '.',
-        'console_link': 'https://console.cloud.google.com/sql/instances/' ~ item.content.overview.instanceName ~ '/overview?project=' ~ project_id
+        'instance': rec.content.overview.instanceName,
+        'engine': rec.content.overview.databaseEngine,
+        'priority': rec.priority,
+        'short_issue': rec.description.split('.')[0] ~ '.',
+        'link': rec.content.overview.playbookLink
       } ] }}"
+    loop: "{{ sql_recs }}"
+    loop_control:
+      loop_var: rec
+    when:
+      - rec.primaryImpact is defined
+      - rec.primaryImpact.category == "PERFORMANCE"
+      - rec.stateInfo.state == "ACTIVE"
+
 
   ###############################################################
   # BUILD MESSAGE
