@@ -120,35 +120,35 @@
   - name: Build Teams message
     set_fact:
       teams_message: |
-        🚨 GCP HIGH USAGE REPORT
-        Project: {{ project_id }}
-
-        === VM SCALE-UP ===
+        🚨 <b>GCP HIGH USAGE REPORT</b><br>
+        <b>Project:</b> {{ project_id }}<br><br>
+  
+        <b>=== VM SCALE-UP ===</b><br>
         {% if vm_high | length == 0 %}
-        No VM scale-up recommendation.
+        No VM scale-up recommendation.<br>
         {% else %}
         {% for v in vm_high %}
-        • {{ v.instance }}
-          Current : {{ v.current }}
-          Suggested: {{ v.suggested }}
-
+        🔹 <b>{{ v.instance }}</b><br>
+        &nbsp;&nbsp;Current : {{ v.current }}<br>
+        &nbsp;&nbsp;Suggested: {{ v.suggested }}<br><br>
         {% endfor %}
         {% endif %}
-
-        === CLOUD SQL PERFORMANCE ===
+  
+        <b>=== CLOUD SQL PERFORMANCE ===</b><br>
         {% if sql_high | length == 0 %}
-        No SQL performance recommendation.
+        No SQL performance recommendation.<br>
         {% else %}
         {% for s in sql_high %}
-        • {{ s.instance }}
-          Priority: {{ s.priority }}
-          {{ s.description }}
-
+        🔹 <b>{{ s.instance }}</b><br>
+        &nbsp;&nbsp;Priority : {{ s.priority }}<br>
+        &nbsp;&nbsp;Issue    : {{ s.description }}<br><br>
         {% endfor %}
         {% endif %}
+  
+        <hr>
+        <b>Total VM:</b> {{ vm_high | length }}<br>
+        <b>Total SQL:</b> {{ sql_high | length }}
 
-        Total VM: {{ vm_high | length }}
-        Total SQL: {{ sql_high | length }}
 
   ###############################################################
   # SEND TO TEAMS (Power Automate)
