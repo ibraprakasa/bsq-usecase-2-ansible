@@ -4,8 +4,9 @@
   vars:
     project_id: "joey-preprod-project"
     zone: "asia-southeast2-a"
+    region: "asia-southeast2"
 
-    teams_webhook_url: "https://outlook.office.com/webhook/XXXXX"   # GANTI dengan webhook Teams kamu
+    teams_webhook_url: "https://outlook.office.com/webhook/XXXXX"   # GANTI webhook kamu
 
   tasks:
 
@@ -24,10 +25,10 @@
     changed_when: false
 
   ###############################################################
-  # GET MACHINE TYPE RECOMMENDATIONS
+  # VM MACHINE TYPE RECOMMENDATIONS
   ###############################################################
 
-  - name: Get VM recommendations
+  - name: Get VM MachineType recommendations
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
@@ -41,17 +42,41 @@
   - name: Parse VM recommendations
     set_fact:
       vm_recs: "{{ vm_raw.stdout | from_json }}"
-    when: vm_raw.stdout | length > 0
+    when:
+      - vm_raw.stdout is defined
+      - vm_raw.stdout | length > 0
 
   ###############################################################
-  # BUILD CLEAN REPORT
+  # CLOUD SQL PERFORMANCE RECOMMENDATIONS
   ###############################################################
 
-  - name: Initialize report list
+  - name: Get Cloud SQL recommendations
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location {{ region }}
+      --recommender google.cloudsql.instance.PerformanceRecommender
+      --format=json
+    register: sql_raw
+    changed_when: false
+    failed_when: false
+
+  - name: Parse SQL recommendations
     set_fact:
-      recommendation_report: []
+      sql_recs: "{{ sql_raw.stdout | from_json }}"
+    when:
+      - sql_raw.stdout is defined
+      - sql_raw.stdout | length > 0
 
-  - name: Build recommendation report
+  ###############################################################
+  # BUILD VM REPORT
+  ###############################################################
+
+  - name: Initialize VM report
+    set_fact:
+      vm_report: []
+
+  - name: Build VM report
     loop: "{{ vm_recs | default([]) }}"
     loop_control:
       index_var: idx
@@ -59,10 +84,32 @@
       instance_name: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
       target_machine_type: "{{ item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
     set_fact:
-      recommendation_report: "{{ recommendation_report + [ {
-        'id': idx + 1,
+      vm_report: "{{ vm_report + [ {
+        'id': 'VM-' ~ (idx + 1),
         'instance': instance_name,
-        'suggested_machine_type': target_machine_type
+        'suggested': target_machine_type
+      } ] }}"
+
+  ###############################################################
+  # BUILD SQL REPORT
+  ###############################################################
+
+  - name: Initialize SQL report
+    set_fact:
+      sql_report: []
+
+  - name: Build SQL report
+    loop: "{{ sql_recs | default([]) }}"
+    loop_control:
+      index_var: idx
+    vars:
+      sql_instance: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+      target_tier: "{{ item.content.operationGroups[0].operations[0].value.settings.tier }}"
+    set_fact:
+      sql_report: "{{ sql_report + [ {
+        'id': 'SQL-' ~ (idx + 1),
+        'instance': sql_instance,
+        'suggested': target_tier
       } ] }}"
 
   ###############################################################
@@ -73,17 +120,35 @@
     set_fact:
       teams_message: |
         GCP LOW USAGE REPORT
-        Project: {{ project_id }}
+        Project : {{ project_id }}
 
-        {% for r in recommendation_report %}
-        [{{ r.id }}]
-        Instance : {{ r.instance }}
-        Suggested: {{ r.suggested_machine_type }}
+        === VM RECOMMENDATIONS ===
+        {% if vm_report | length == 0 %}
+        No VM resize recommendations.
+        {% else %}
+        {% for v in vm_report %}
+        [{{ v.id }}]
+        Instance : {{ v.instance }}
+        Suggested: {{ v.suggested }}
 
         {% endfor %}
+        {% endif %}
 
-        To remediate:
-        Launch template "Remediate Low Usage"
+        === CLOUD SQL RECOMMENDATIONS ===
+        {% if sql_report | length == 0 %}
+        No Cloud SQL resize recommendations.
+        {% else %}
+        {% for s in sql_report %}
+        [{{ s.id }}]
+        Instance : {{ s.instance }}
+        Suggested Tier: {{ s.suggested }}
+
+        {% endfor %}
+        {% endif %}
+
+        Next Action:
+        Open AAP → Launch "Remediate Low Usage"
+        Fill survey accordingly.
 
   ###############################################################
   # SEND TO TEAMS
