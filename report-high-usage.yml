@@ -118,12 +118,16 @@
   # BUILD MESSAGE
   ###############################################################
 
+  - name: Set execution timestamp
+    set_fact:
+      exec_time: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}
+    
   - name: Build Teams message
     set_fact:
       teams_message: |
         🚨 <b>GCP HIGH USAGE ALERT</b><br>
         <b>Project:</b> {{ project_id }}<br>
-        <b>Detected at:</b> {{ ansible_date_time.iso8601 }}<br><br>
+        <b>Detected at:</b> {{ exec_time }}
   
         <b>━━━━━━━━━━━━━━━━━━━━━━</b><br>
   
