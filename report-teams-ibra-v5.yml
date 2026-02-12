@@ -51,14 +51,13 @@
       vm_report: []
 
   - name: Process VM recommendations (Downsize only)
-    loop: "{{ vm_recs | default([]) }}"
-    loop_control:
-      index_var: idx
-    vars:
-      instance_name: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_machine_type: "{{ item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
     block:
-
+  
+      - name: Set VM variables
+        set_fact:
+          instance_name: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+          target_machine_type: "{{ item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
+  
       - name: Get current VM machine type
         command: >
           gcloud compute instances describe {{ instance_name }}
@@ -67,19 +66,18 @@
           --format="value(machineType)"
         register: current_vm
         changed_when: false
-
+  
       - name: Extract VM CPU info
         set_fact:
           current_machine_type: "{{ current_vm.stdout.split('/')[-1] }}"
           current_cpu: "{{ current_vm.stdout.split('/')[-1].split('-')[-1] | int }}"
           target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
-
+  
       - name: Validate CPU parsing
         fail:
           msg: "Failed to parse CPU from machine type"
         when: current_cpu is not defined or target_cpu is not defined
-
-
+  
       - name: Append only downsize VM
         set_fact:
           vm_report: "{{ vm_report + [ {
@@ -89,6 +87,11 @@
             'suggested': target_machine_type
           } ] }}"
         when: target_cpu < current_cpu
+  
+    loop: "{{ vm_recs | default([]) }}"
+    loop_control:
+      index_var: idx
+
 
   ###############################################################
   # CLOUD SQL PERFORMANCE RECOMMENDATIONS
