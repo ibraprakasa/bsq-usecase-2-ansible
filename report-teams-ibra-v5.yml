@@ -39,12 +39,50 @@
     changed_when: false
     failed_when: false
 
-  - name: Parse VM recommendations
+  - name: Parse VM recommendations safely
     set_fact:
       vm_recs: "{{ vm_raw.stdout | from_json }}"
     when:
       - vm_raw.stdout is defined
       - vm_raw.stdout | length > 0
+
+  - name: Initialize VM report
+    set_fact:
+      vm_report: []
+
+  - name: Process VM recommendations (Downsize only)
+    loop: "{{ vm_recs | default([]) }}"
+    loop_control:
+      index_var: idx
+    vars:
+      instance_name: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+      target_machine_type: "{{ item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
+    block:
+
+      - name: Get current VM machine type
+        command: >
+          gcloud compute instances describe {{ instance_name }}
+          --zone {{ zone }}
+          --project {{ project_id }}
+          --format="value(machineType)"
+        register: current_vm
+        changed_when: false
+
+      - name: Extract VM CPU info
+        set_fact:
+          current_machine_type: "{{ current_vm.stdout.split('/')[-1] }}"
+          current_cpu: "{{ current_vm.stdout.split('/')[-1].split('-')[-1] | int }}"
+          target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
+
+      - name: Append only downsize VM
+        set_fact:
+          vm_report: "{{ vm_report + [ {
+            'id': 'VM-' ~ (idx + 1),
+            'instance': instance_name,
+            'current': current_machine_type,
+            'suggested': target_machine_type
+          } ] }}"
+        when: target_cpu < current_cpu
 
   ###############################################################
   # CLOUD SQL PERFORMANCE RECOMMENDATIONS
@@ -61,56 +99,63 @@
     changed_when: false
     failed_when: false
 
-  - name: Parse SQL recommendations
+  - name: Parse SQL recommendations safely
     set_fact:
       sql_recs: "{{ sql_raw.stdout | from_json }}"
     when:
       - sql_raw.stdout is defined
       - sql_raw.stdout | length > 0
 
-  ###############################################################
-  # BUILD VM REPORT
-  ###############################################################
-
-  - name: Initialize VM report
-    set_fact:
-      vm_report: []
-
-  - name: Build VM report
-    loop: "{{ vm_recs | default([]) }}"
-    loop_control:
-      index_var: idx
-    vars:
-      instance_name: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_machine_type: "{{ item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
-    set_fact:
-      vm_report: "{{ vm_report + [ {
-        'id': 'VM-' ~ (idx + 1),
-        'instance': instance_name,
-        'suggested': target_machine_type
-      } ] }}"
-
-  ###############################################################
-  # BUILD SQL REPORT
-  ###############################################################
-
   - name: Initialize SQL report
     set_fact:
       sql_report: []
 
-  - name: Build SQL report
+  - name: Process SQL recommendations (Downsize only)
     loop: "{{ sql_recs | default([]) }}"
     loop_control:
       index_var: idx
     vars:
       sql_instance: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
       target_tier: "{{ item.content.operationGroups[0].operations[0].value.settings.tier }}"
-    set_fact:
-      sql_report: "{{ sql_report + [ {
-        'id': 'SQL-' ~ (idx + 1),
-        'instance': sql_instance,
-        'suggested': target_tier
-      } ] }}"
+    block:
+
+      - name: Get current SQL tier
+        command: >
+          gcloud sql instances describe {{ sql_instance }}
+          --project {{ project_id }}
+          --format="value(settings.tier)"
+        register: current_sql
+        changed_when: false
+
+      - name: Extract SQL CPU info
+        set_fact:
+          current_tier: "{{ current_sql.stdout }}"
+          current_cpu: "{{ current_sql.stdout.split('-')[2] | int }}"
+          target_cpu: "{{ target_tier.split('-')[2] | int }}"
+
+      - name: Append only downsize SQL
+        set_fact:
+          sql_report: "{{ sql_report + [ {
+            'id': 'SQL-' ~ (idx + 1),
+            'instance': sql_instance,
+            'current': current_tier,
+            'suggested': target_tier
+          } ] }}"
+        when: target_cpu < current_cpu
+
+  ###############################################################
+  # SAVE ARTIFACTS
+  ###############################################################
+
+  - name: Save VM report artifact
+    copy:
+      content: "{{ vm_report | to_nice_json }}"
+      dest: "/runner/artifacts/vm_report.json"
+
+  - name: Save SQL report artifact
+    copy:
+      content: "{{ sql_report | to_nice_json }}"
+      dest: "/runner/artifacts/sql_report.json"
 
   ###############################################################
   # FORMAT TEAMS MESSAGE
@@ -122,33 +167,35 @@
         GCP LOW USAGE REPORT
         Project : {{ project_id }}
 
-        === VM RECOMMENDATIONS ===
+        === VM DOWNSIZE RECOMMENDATIONS ===
         {% if vm_report | length == 0 %}
-        No VM resize recommendations.
+        No VM downsize recommendations.
         {% else %}
         {% for v in vm_report %}
         [{{ v.id }}]
         Instance : {{ v.instance }}
+        Current  : {{ v.current }}
         Suggested: {{ v.suggested }}
 
         {% endfor %}
         {% endif %}
 
-        === CLOUD SQL RECOMMENDATIONS ===
+        === CLOUD SQL DOWNSIZE RECOMMENDATIONS ===
         {% if sql_report | length == 0 %}
-        No Cloud SQL resize recommendations.
+        No Cloud SQL downsize recommendations.
         {% else %}
         {% for s in sql_report %}
         [{{ s.id }}]
         Instance : {{ s.instance }}
-        Suggested Tier: {{ s.suggested }}
+        Current  : {{ s.current }}
+        Suggested: {{ s.suggested }}
 
         {% endfor %}
         {% endif %}
 
-        Next Action:
-        Open AAP → Launch "Remediate Low Usage"
-        Fill survey accordingly.
+        NEXT ACTION:
+        • For VM → Launch template "Remediate Low Usage - VM"
+        • For Cloud SQL → Launch template "Remediate Low Usage - Cloud SQL"
 
   ###############################################################
   # SEND TO TEAMS
