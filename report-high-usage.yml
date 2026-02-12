@@ -5,7 +5,6 @@
     project_id: "joey-preprod-project"
     zone: "asia-southeast2-a"
     region: "asia-southeast2"
-
     teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4853a33866174df5a29410585f0e9cf5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=8E44F_-FX_eJN1eLrAYmL-klR-9puxICRAv2IkzV7cA"
 
   tasks:
@@ -25,10 +24,10 @@
     changed_when: false
 
   ###############################################################
-  # VM HIGH USAGE (SCALE UP)
+  # VM MACHINE TYPE RECOMMENDER (HIGH USAGE / UPSIZE)
   ###############################################################
 
-  - name: Get VM MachineType recommendations
+  - name: Get VM recommendations
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
@@ -43,47 +42,46 @@
     set_fact:
       vm_recs: "{{ vm_raw.stdout | default('[]') | from_json }}"
 
-  - name: Initialize VM high usage report
+  - name: Init high usage VM list
     set_fact:
-      vm_high_report: []
+      vm_high: []
+
+  - name: Get current VM machine type
+    command: >
+      gcloud compute instances describe
+      {{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}
+      --zone {{ zone }}
+      --project {{ project_id }}
+      --format="value(machineType)"
+    register: current_vm
+    loop: "{{ vm_recs }}"
+    loop_control:
+      label: "{{ item.name | default('vm') }}"
+    changed_when: false
+    failed_when: false
 
   - name: Evaluate VM scale-up
-    loop: "{{ vm_recs }}"
-    vars:
-      instance_name: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_machine_type: "{{ item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
-    block:
-
-      - name: Get current VM type
-        command: >
-          gcloud compute instances describe {{ instance_name }}
-          --zone {{ zone }}
-          --project {{ project_id }}
-          --format="value(machineType)"
-        register: current_vm
-        changed_when: false
-
-      - name: Extract CPU values
-        set_fact:
-          current_type: "{{ current_vm.stdout.split('/')[-1] }}"
-          current_cpu: "{{ current_vm.stdout.split('/')[-1].split('-')[-1] | int }}"
-          target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
-
-      - name: Append only scale-up VM
-        set_fact:
-          vm_high_report: "{{ vm_high_report + [ {
-            'instance': instance_name,
-            'current': current_type,
-            'suggested': target_machine_type
-          } ] }}"
-        when: target_cpu > current_cpu
-
+    set_fact:
+      vm_high: "{{ vm_high + [ {
+        'instance': item.item.content.operationGroups[0].operations[0].resource.split('/')[-1],
+        'current': item.stdout.split('/')[-1],
+        'suggested': item.item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1]
+      } ] }}"
+    loop: "{{ current_vm.results }}"
+    when: >
+      (
+        item.stdout.split('/')[-1].split('-')[-1] | int
+      )
+      <
+      (
+        item.item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] | int
+      )
 
   ###############################################################
-  # CLOUD SQL HIGH USAGE (SCALE UP)
+  # CLOUD SQL PERFORMANCE RECOMMENDER (HIGH USAGE)
   ###############################################################
 
-  - name: Get Cloud SQL recommendations
+  - name: Get SQL recommendations
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
@@ -98,41 +96,18 @@
     set_fact:
       sql_recs: "{{ sql_raw.stdout | default('[]') | from_json }}"
 
-  - name: Initialize SQL high usage report
+  - name: Init high usage SQL list
     set_fact:
-      sql_high_report: []
+      sql_high: []
 
-  - name: Evaluate SQL scale-up
+  - name: Append SQL high usage (performance only)
+    set_fact:
+      sql_high: "{{ sql_high + [ {
+        'instance': item.content.overview.instanceName,
+        'description': item.description
+      } ] }}"
     loop: "{{ sql_recs }}"
-    when: item.content.operationGroups[0].operations[0].value.settings is defined
-    vars:
-      sql_instance: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_tier: "{{ item.content.operationGroups[0].operations[0].value.settings.tier }}"
-    block:
-
-      - name: Get current SQL tier
-        command: >
-          gcloud sql instances describe {{ sql_instance }}
-          --project {{ project_id }}
-          --format="value(settings.tier)"
-        register: current_sql
-        changed_when: false
-
-      - name: Extract CPU values SQL
-        set_fact:
-          current_tier: "{{ current_sql.stdout }}"
-          current_cpu: "{{ current_sql.stdout.split('-')[2] | int }}"
-          target_cpu: "{{ target_tier.split('-')[2] | int }}"
-
-      - name: Append only scale-up SQL
-        set_fact:
-          sql_high_report: "{{ sql_high_report + [ {
-            'instance': sql_instance,
-            'current': current_tier,
-            'suggested': target_tier
-          } ] }}"
-        when: target_cpu > current_cpu
-
+    when: item.category == "PERFORMANCE"
 
   ###############################################################
   # BUILD MESSAGE
@@ -141,45 +116,41 @@
   - name: Build Teams message
     set_fact:
       teams_message: |
-        🔥 GCP HIGH USAGE REPORT
-        Project : {{ project_id }}
+        🚨 GCP HIGH USAGE REPORT
+        Project: {{ project_id }}
 
-        === VM SCALE-UP RECOMMENDATIONS ===
-        {% if vm_high_report | length == 0 %}
+        === VM SCALE UP ===
+        {% if vm_high | length == 0 %}
         No VM high usage detected.
         {% else %}
-        {% for v in vm_high_report %}
-        • {{ v.instance }}
-          Current : {{ v.current }}
-          Suggested: {{ v.suggested }}
+        {% for v in vm_high %}
+        Instance: {{ v.instance }}
+        Current : {{ v.current }}
+        Suggested: {{ v.suggested }}
 
         {% endfor %}
         {% endif %}
 
-        === CLOUD SQL SCALE-UP RECOMMENDATIONS ===
-        {% if sql_high_report | length == 0 %}
-        No Cloud SQL high usage detected.
+        === CLOUD SQL PERFORMANCE ===
+        {% if sql_high | length == 0 %}
+        No SQL performance recommendation.
         {% else %}
-        {% for s in sql_high_report %}
-        • {{ s.instance }}
-          Current : {{ s.current }}
-          Suggested: {{ s.suggested }}
+        {% for s in sql_high %}
+        Instance: {{ s.instance }}
+        {{ s.description }}
 
         {% endfor %}
         {% endif %}
-
-        Total VM: {{ vm_high_report | length }}
-        Total SQL: {{ sql_high_report | length }}
 
   ###############################################################
   # SEND TO TEAMS (Power Automate)
   ###############################################################
 
-  - name: Send report to Teams
+  - name: Send to Teams
     uri:
       url: "{{ teams_webhook_url }}"
       method: POST
       body_format: json
       body:
         text: "{{ teams_message }}"
-      status_code: [200,202]
+      status_code: 202
