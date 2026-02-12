@@ -1,0 +1,98 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "joey-preprod-project"
+    zone: "asia-southeast2-a"
+
+    teams_webhook_url: "https://outlook.office.com/webhook/XXXXX"   # GANTI dengan webhook Teams kamu
+
+  tasks:
+
+  ###############################################################
+  # AUTHENTICATION
+  ###############################################################
+
+  - name: Write GCP Service Account JSON
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
+
+  - name: Authenticate to GCP
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
+
+  ###############################################################
+  # GET MACHINE TYPE RECOMMENDATIONS
+  ###############################################################
+
+  - name: Get VM recommendations
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location {{ zone }}
+      --recommender google.compute.instance.MachineTypeRecommender
+      --format=json
+    register: vm_raw
+    changed_when: false
+    failed_when: false
+
+  - name: Parse VM recommendations
+    set_fact:
+      vm_recs: "{{ vm_raw.stdout | from_json }}"
+    when: vm_raw.stdout | length > 0
+
+  ###############################################################
+  # BUILD CLEAN REPORT
+  ###############################################################
+
+  - name: Initialize report list
+    set_fact:
+      recommendation_report: []
+
+  - name: Build recommendation report
+    loop: "{{ vm_recs | default([]) }}"
+    loop_control:
+      index_var: idx
+    vars:
+      instance_name: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+      target_machine_type: "{{ item.content.operationGroups[0].operations[0].value.machineType.split('/')[-1] }}"
+    set_fact:
+      recommendation_report: "{{ recommendation_report + [ {
+        'id': idx + 1,
+        'instance': instance_name,
+        'suggested_machine_type': target_machine_type
+      } ] }}"
+
+  ###############################################################
+  # FORMAT TEAMS MESSAGE
+  ###############################################################
+
+  - name: Build Teams message
+    set_fact:
+      teams_message: |
+        GCP LOW USAGE REPORT
+        Project: {{ project_id }}
+
+        {% for r in recommendation_report %}
+        [{{ r.id }}]
+        Instance : {{ r.instance }}
+        Suggested: {{ r.suggested_machine_type }}
+
+        {% endfor %}
+
+        To remediate:
+        Launch template "Remediate Low Usage"
+
+  ###############################################################
+  # SEND TO TEAMS
+  ###############################################################
+
+  - name: Send report to Teams
+    uri:
+      url: "{{ teams_webhook_url }}"
+      method: POST
+      body_format: json
+      body:
+        text: "{{ teams_message }}"
