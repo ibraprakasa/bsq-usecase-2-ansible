@@ -105,14 +105,14 @@
         'instance': item.content.overview.instanceName,
         'engine': item.content.overview.databaseEngine,
         'priority': item.priority,
+        'severity': (
+          '🔥 Critical' if item.priority == 'P1'
+          else '⚠ High' if item.priority == 'P2'
+          else 'ℹ Medium'
+        ),
         'short_issue': item.description.split('.')[0] ~ '.',
-        'link': item.content.overview.playbookLink
+        'console_link': 'https://console.cloud.google.com/sql/instances/' ~ item.content.overview.instanceName ~ '/overview?project=' ~ project_id
       } ] }}"
-    loop: "{{ sql_recs }}"
-    when:
-      - item.primaryImpact is defined
-      - item.primaryImpact.category == "PERFORMANCE"
-      - item.stateInfo.state == "ACTIVE"
 
   ###############################################################
   # BUILD MESSAGE
