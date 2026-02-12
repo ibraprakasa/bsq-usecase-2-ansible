@@ -220,5 +220,8 @@
       body_format: json
       status_code: [200, 202]
       body:
-        text: "{{ teams_message }}"
+        project_id: "{{ project_id }}"
+        recommendations: []
+        all_text: "{{ teams_message }}"
+
 
