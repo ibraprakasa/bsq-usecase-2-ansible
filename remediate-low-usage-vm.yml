@@ -3,8 +3,7 @@
 
   vars:
     project_id: "joey-preprod-project"
-
-    teams_webhook_url: "https://outlook.office.com/webhook/XXXXX"   # GANTI webhook kamu
+    teams_webhook_url: "https://outlook.office.com/webhook/XXXXX"
 
   tasks:
 
@@ -21,19 +20,6 @@
   - name: Authenticate to GCP
     command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
     changed_when: false
-
-  ###############################################################
-  # VALIDATE SURVEY INPUT
-  ###############################################################
-
-  - name: Validate survey input
-    assert:
-      that:
-        - instance is defined
-        - zone is defined
-        - machine_type is defined
-        - approved_by is defined
-      fail_msg: "Survey input missing"
 
   ###############################################################
   # GET CURRENT MACHINE TYPE
@@ -56,10 +42,10 @@
   # AUDIT LOG
   ###############################################################
 
-  - name: Audit info
+  - name: Audit log
     debug:
       msg:
-        - "APPROVED ACTION: resize_vm"
+        - "ACTION: VM Resize"
         - "Instance: {{ instance }}"
         - "Zone: {{ zone }}"
         - "Current: {{ current_machine_type }}"
@@ -70,14 +56,14 @@
   # RESIZE IF NEEDED
   ###############################################################
 
-  - name: Stop instance
+  - name: Stop VM
     command: >
       gcloud compute instances stop {{ instance }}
       --zone {{ zone }}
       --project {{ project_id }}
     when: current_machine_type != machine_type
 
-  - name: Resize instance
+  - name: Resize VM
     command: >
       gcloud compute instances set-machine-type {{ instance }}
       --machine-type {{ machine_type }}
@@ -85,7 +71,7 @@
       --project {{ project_id }}
     when: current_machine_type != machine_type
 
-  - name: Start instance
+  - name: Start VM
     command: >
       gcloud compute instances start {{ instance }}
       --zone {{ zone }}
@@ -113,7 +99,7 @@
       body_format: json
       body:
         text: |
-          RESIZE RESULT
+          VM RESIZE RESULT
           Instance: {{ instance }}
           Zone: {{ zone }}
           Old Type: {{ current_machine_type }}
