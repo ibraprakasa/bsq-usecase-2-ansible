@@ -72,6 +72,7 @@
           else '🟢 Low' if item.item.priority == 'P4'
           else 'ℹ Info'
         ),
+        'priority': item.item.priority | default('N/A'),
         'console_link': 'https://console.cloud.google.com/compute/instancesDetail/zones/' ~
                         zone ~
                         '/instances/' ~
