@@ -56,6 +56,16 @@
         - "Target CPU: {{ target_cpu }}"
         - "Downsize Allowed: {{ allow_resize }}"
 
+  - name: Block upscale or lateral SQL tier change in PROD
+    fail:
+      msg: >
+        Tier change blocked.
+        Current CPU: {{ current_cpu }}
+        Target CPU: {{ target_cpu }}
+        Only downsize allowed in production.
+    when: not allow_resize
+
+
   ###############################################################
   # PATCH ONLY IF DOWNSIZE
   ###############################################################
