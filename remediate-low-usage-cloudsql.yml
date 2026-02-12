@@ -1,0 +1,97 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "joey-preprod-project"
+    teams_webhook_url: "https://outlook.office.com/webhook/XXXXX"
+
+  tasks:
+
+  ###############################################################
+  # AUTH
+  ###############################################################
+
+  - name: Write GCP Service Account JSON
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
+
+  - name: Authenticate to GCP
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
+
+  ###############################################################
+  # GET CURRENT TIER
+  ###############################################################
+
+  - name: Get current SQL tier
+    command: >
+      gcloud sql instances describe {{ instance }}
+      --project {{ project_id }}
+      --format="value(settings.tier)"
+    register: current_sql
+    changed_when: false
+
+  - name: Extract tier info
+    set_fact:
+      current_tier: "{{ current_sql.stdout }}"
+      current_cpu: "{{ current_sql.stdout.split('-')[2] | int }}"
+      target_cpu: "{{ machine_type.split('-')[2] | int }}"
+
+  ###############################################################
+  # DECISION LOGIC
+  ###############################################################
+
+  - name: Decide if downsize allowed
+    set_fact:
+      allow_resize: "{{ target_cpu < current_cpu }}"
+
+  - name: Debug decision
+    debug:
+      msg:
+        - "Current Tier: {{ current_tier }}"
+        - "Target Tier: {{ machine_type }}"
+        - "Current CPU: {{ current_cpu }}"
+        - "Target CPU: {{ target_cpu }}"
+        - "Downsize Allowed: {{ allow_resize }}"
+
+  ###############################################################
+  # PATCH ONLY IF DOWNSIZE
+  ###############################################################
+
+  - name: Patch SQL tier
+    command: >
+      gcloud sql instances patch {{ instance }}
+      --tier={{ machine_type }}
+      --project {{ project_id }}
+      --quiet
+    when: allow_resize
+
+  ###############################################################
+  # RESULT
+  ###############################################################
+
+  - name: Set result
+    set_fact:
+      resize_status: >-
+        {{
+          "SKIPPED - Not a downsize operation"
+          if not allow_resize
+          else
+          "SUCCESS - SQL tier changed from " + current_tier + " to " + machine_type
+        }}
+
+  - name: Send result to Teams
+    uri:
+      url: "{{ teams_webhook_url }}"
+      method: POST
+      body_format: json
+      body:
+        text: |
+          CLOUD SQL LOW USAGE REMEDIATION
+          Instance: {{ instance }}
+          Old Tier: {{ current_tier }}
+          Target: {{ machine_type }}
+          Approved By: {{ approved_by }}
+          Status: {{ resize_status }}
