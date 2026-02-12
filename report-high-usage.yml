@@ -120,6 +120,14 @@
         'instance': rec.content.overview.instanceName,
         'engine': rec.content.overview.databaseEngine,
         'priority': rec.priority | default('N/A'),
+        'severity': (
+          '🔥 Critical' if rec.priority == 'P1'
+          else '⚠ High' if rec.priority == 'P2'
+          else 'ℹ Medium' if rec.priority == 'P3'
+          else '🟢 Low' if rec.priority == 'P4'
+          else 'ℹ Info'
+        ),
+        'impact': rec.primaryImpact.category | default('PERFORMANCE'),
         'short_issue': (rec.description.split('.')[0] ~ '.') if rec.description is defined else 'Performance issue detected.',
         'console_link': 'https://console.cloud.google.com/sql/instances/' ~
                         rec.content.overview.instanceName ~
@@ -132,6 +140,7 @@
       - rec.primaryImpact is defined
       - rec.primaryImpact.category == "PERFORMANCE"
       - rec.stateInfo.state == "ACTIVE"
+
 
 
 
