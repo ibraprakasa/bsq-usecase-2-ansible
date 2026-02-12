@@ -24,7 +24,7 @@
     changed_when: false
 
   ###############################################################
-  # VM MACHINE TYPE RECOMMENDER (HIGH USAGE / UPSIZE)
+  # VM MACHINE TYPE RECOMMENDER (HIGH USAGE = SCALE UP)
   ###############################################################
 
   - name: Get VM recommendations
@@ -42,11 +42,11 @@
     set_fact:
       vm_recs: "{{ vm_raw.stdout | default('[]') | from_json }}"
 
-  - name: Init high usage VM list
+  - name: Init VM high usage list
     set_fact:
       vm_high: []
 
-  - name: Get current VM machine type
+  - name: Get current VM machine types
     command: >
       gcloud compute instances describe
       {{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}
@@ -55,12 +55,10 @@
       --format="value(machineType)"
     register: current_vm
     loop: "{{ vm_recs }}"
-    loop_control:
-      label: "{{ item.name | default('vm') }}"
     changed_when: false
     failed_when: false
 
-  - name: Evaluate VM scale-up
+  - name: Append VM scale-up only
     set_fact:
       vm_high: "{{ vm_high + [ {
         'instance': item.item.content.operationGroups[0].operations[0].resource.split('/')[-1],
@@ -69,6 +67,7 @@
       } ] }}"
     loop: "{{ current_vm.results }}"
     when: >
+      item.stdout is defined and
       (
         item.stdout.split('/')[-1].split('-')[-1] | int
       )
@@ -78,7 +77,7 @@
       )
 
   ###############################################################
-  # CLOUD SQL PERFORMANCE RECOMMENDER (HIGH USAGE)
+  # CLOUD SQL PERFORMANCE RECOMMENDER
   ###############################################################
 
   - name: Get SQL recommendations
@@ -96,18 +95,23 @@
     set_fact:
       sql_recs: "{{ sql_raw.stdout | default('[]') | from_json }}"
 
-  - name: Init high usage SQL list
+  - name: Init SQL high usage list
     set_fact:
       sql_high: []
 
-  - name: Append SQL high usage (performance only)
+  - name: Append ACTIVE PERFORMANCE SQL recommendations
     set_fact:
       sql_high: "{{ sql_high + [ {
         'instance': item.content.overview.instanceName,
-        'description': item.description
+        'description': item.description,
+        'priority': item.priority
       } ] }}"
     loop: "{{ sql_recs }}"
-    when: item.category == "PERFORMANCE"
+    when:
+      - item.primaryImpact is defined
+      - item.primaryImpact.category == "PERFORMANCE"
+      - item.stateInfo.state == "ACTIVE"
+      - item.content.overview.instanceName is defined
 
   ###############################################################
   # BUILD MESSAGE
@@ -119,14 +123,14 @@
         🚨 GCP HIGH USAGE REPORT
         Project: {{ project_id }}
 
-        === VM SCALE UP ===
+        === VM SCALE-UP ===
         {% if vm_high | length == 0 %}
-        No VM high usage detected.
+        No VM scale-up recommendation.
         {% else %}
         {% for v in vm_high %}
-        Instance: {{ v.instance }}
-        Current : {{ v.current }}
-        Suggested: {{ v.suggested }}
+        • {{ v.instance }}
+          Current : {{ v.current }}
+          Suggested: {{ v.suggested }}
 
         {% endfor %}
         {% endif %}
@@ -136,11 +140,15 @@
         No SQL performance recommendation.
         {% else %}
         {% for s in sql_high %}
-        Instance: {{ s.instance }}
-        {{ s.description }}
+        • {{ s.instance }}
+          Priority: {{ s.priority }}
+          {{ s.description }}
 
         {% endfor %}
         {% endif %}
+
+        Total VM: {{ vm_high | length }}
+        Total SQL: {{ sql_high | length }}
 
   ###############################################################
   # SEND TO TEAMS (Power Automate)
