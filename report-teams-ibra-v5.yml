@@ -74,6 +74,12 @@
           current_cpu: "{{ current_vm.stdout.split('/')[-1].split('-')[-1] | int }}"
           target_cpu: "{{ target_machine_type.split('-')[-1] | int }}"
 
+      - name: Validate CPU parsing
+        fail:
+          msg: "Failed to parse CPU from machine type"
+        when: current_cpu is not defined or target_cpu is not defined
+
+
       - name: Append only downsize VM
         set_fact:
           vm_report: "{{ vm_report + [ {
