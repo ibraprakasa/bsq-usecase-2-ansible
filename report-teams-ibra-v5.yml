@@ -118,16 +118,15 @@
   - name: Initialize SQL report
     set_fact:
       sql_report: []
-
+      
   - name: Process SQL recommendations (Downsize only)
-    loop: "{{ sql_recs | default([]) }}"
-    loop_control:
-      index_var: idx
-    vars:
-      sql_instance: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
-      target_tier: "{{ item.content.operationGroups[0].operations[0].value.settings.tier }}"
     block:
-
+  
+      - name: Set SQL variables
+        set_fact:
+          sql_instance: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+          target_tier: "{{ item.content.operationGroups[0].operations[0].value.settings.tier }}"
+  
       - name: Get current SQL tier
         command: >
           gcloud sql instances describe {{ sql_instance }}
@@ -135,13 +134,13 @@
           --format="value(settings.tier)"
         register: current_sql
         changed_when: false
-
+  
       - name: Extract SQL CPU info
         set_fact:
           current_tier: "{{ current_sql.stdout }}"
           current_cpu: "{{ current_sql.stdout.split('-')[2] | int }}"
           target_cpu: "{{ target_tier.split('-')[2] | int }}"
-
+  
       - name: Append only downsize SQL
         set_fact:
           sql_report: "{{ sql_report + [ {
@@ -151,6 +150,11 @@
             'suggested': target_tier
           } ] }}"
         when: target_cpu < current_cpu
+  
+    loop: "{{ sql_recs | default([]) }}"
+    loop_control:
+      index_var: idx
+
 
   ###############################################################
   # SAVE ARTIFACTS
