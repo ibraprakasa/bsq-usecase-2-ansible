@@ -218,5 +218,7 @@
       url: "{{ teams_webhook_url }}"
       method: POST
       body_format: json
+      status_code: [200, 202]
       body:
         text: "{{ teams_message }}"
+
