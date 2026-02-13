@@ -25,7 +25,7 @@
       - google.iam.policy.Recommender
       - google.container.security.Recommender
 
-    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/b4b10c5f815c4aaa958c92e4ed187886/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=9_QYtd8ZbtUYjegEXrGBnepdWnypMbfzKp01pNdSKC4"
+    teams_webhook_url: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/62c2271142f6484ab40747b41561187b/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=YbUKeZGhErptVjloe_mJxxg0CPumMQ6dLtYycsIyCZ8"
 
   tasks:
     - name: Write GCP SA
