@@ -121,8 +121,10 @@
       method: POST
       body_format: json
       body: "{{ final_report }}"
+      status_code: [200, 202]
       return_content: yes
     register: flow_response
   
   - debug:
       var: flow_response
+
