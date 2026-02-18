@@ -103,6 +103,9 @@
   - set_fact:
       final_report:
         project: "{{ project_id }}"
+        locations:
+          - "{{ zone }}"
+          - "{{ region }}"
         generated_at: "{{ ansible_date_time.iso8601 }}"
         summary:
           total_recommendations: "{{ recommendations | length }}"
@@ -118,3 +121,8 @@
       method: POST
       body_format: json
       body: "{{ final_report }}"
+      return_content: yes
+    register: flow_response
+  
+  - debug:
+      var: flow_response
