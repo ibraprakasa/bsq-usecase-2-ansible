@@ -7,17 +7,18 @@
     region: "asia-southeast2"
     power_automate_webhook: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ae661a2ed7514edcadc59661196aff27/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=uB31RGOx6Asj2iDJqF7LtWzOPOKPE5KXhCLg5J-_1Ss"
 
+    locations:
+      - "{{ zone }}"
+      - "{{ region }}"
+      - "global"
+
     recommenders:
       - id: "google.compute.instance.MachineTypeRecommender"
-        location: "{{ zone }}"
       - id: "google.cloudsql.instance.PerformanceRecommender"
-        location: "{{ region }}"
       - id: "google.compute.instanceGroupManager.MachineTypeRecommender"
-        location: "{{ zone }}"
       - id: "google.container.cluster.NodePoolRecommender"
-        location: "{{ region }}"
       - id: "google.compute.disk.IdleResourceRecommender"
-        location: "{{ zone }}"
+      - id: "google.compute.image.IdleResourceRecommender"   # ✅ NEW
 
   tasks:
 
@@ -36,20 +37,23 @@
     changed_when: false
 
   ###############################################################
-  # FETCH RECOMMENDATIONS
+  # FETCH RECOMMENDATIONS (ZONE / REGION / GLOBAL SAFE LOOP)
   ###############################################################
 
   - set_fact:
       raw_recommendations: []
 
-  - name: Fetch from all recommenders
-    loop: "{{ recommenders }}"
+  - name: Fetch from all recommenders and locations
+    loop: "{{ recommenders | product(locations) | list }}"
     loop_control:
-      loop_var: rec
+      loop_var: combo
+    vars:
+      rec: "{{ combo.0 }}"
+      loc: "{{ combo.1 }}"
     command: >
       gcloud recommender recommendations list
       --project {{ project_id }}
-      --location {{ rec.location }}
+      --location {{ loc }}
       --recommender {{ rec.id }}
       --format=json
     register: rec_out
@@ -72,28 +76,38 @@
   - set_fact:
       recommendations: []
 
-  - name: Normalize COST recommendations
+  - name: Normalize COST recommendations (including delete_image)
     loop: "{{ raw_recommendations }}"
     when:
       - item.primaryImpact is defined
       - item.primaryImpact.category == "COST"
     vars:
-      resource_name: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+      operation: "{{ item.content.operationGroups[0].operations[0] }}"
+      resource_name: "{{ operation.resource.split('/')[-1] }}"
+      action_type: >-
+        {% if 'image' in operation.resource %}
+        delete_image
+        {% elif 'disk' in operation.resource %}
+        delete_disk
+        {% elif 'instance' in operation.resource %}
+        resize_vm
+        {% else %}
+        optimize_resource
+        {% endif %}
       saving_amount: "{{ item.primaryImpact.costProjection.cost.units | default(0) | int }}"
       saving_currency: "{{ item.primaryImpact.costProjection.cost.currencyCode | default('USD') }}"
     set_fact:
       recommendations: "{{ recommendations + [ {
-        'recommender_id': item.name,
-        'recommender': item.recommenderSubtype | default('UNKNOWN'),
-        'location': item.name.split('/')[3],
+        'action': action_type,
         'resource': resource_name,
-        'description': item.description,
-        'impact_category': item.primaryImpact.category,
+        'category': 'COST',
+        'suggestion': 'Save cost by applying recommendation to ' ~ resource_name ~ '.',
+        'recommender_id': item.name,
+        'location': item.name.split('/')[3],
         'estimated_saving': {
           'amount': saving_amount,
           'currency': saving_currency
-        },
-        'operations': item.content.operationGroups[0].operations
+        }
       } ] }}"
 
   ###############################################################
@@ -103,9 +117,7 @@
   - set_fact:
       final_report:
         project: "{{ project_id }}"
-        locations:
-          - "{{ zone }}"
-          - "{{ region }}"
+        locations: "{{ locations }}"
         generated_at: "{{ ansible_date_time.iso8601 }}"
         summary:
           total_recommendations: "{{ recommendations | length | int }}"
@@ -124,7 +136,6 @@
       status_code: [200, 202]
       return_content: yes
     register: flow_response
-  
+
   - debug:
       var: flow_response
-
