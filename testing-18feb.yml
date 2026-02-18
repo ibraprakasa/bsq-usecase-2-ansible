@@ -1,0 +1,120 @@
+- hosts: localhost
+  gather_facts: true
+
+  vars:
+    project_id: "joey-preprod-project"
+    zone: "asia-southeast2-a"
+    region: "asia-southeast2"
+    power_automate_webhook: "https://YOUR_FLOW_WEBHOOK"
+
+    recommenders:
+      - id: "google.compute.instance.MachineTypeRecommender"
+        location: "{{ zone }}"
+      - id: "google.cloudsql.instance.PerformanceRecommender"
+        location: "{{ region }}"
+      - id: "google.compute.instanceGroupManager.MachineTypeRecommender"
+        location: "{{ zone }}"
+      - id: "google.container.cluster.NodePoolRecommender"
+        location: "{{ region }}"
+      - id: "google.compute.disk.IdleResourceRecommender"
+        location: "{{ zone }}"
+
+  tasks:
+
+  ###############################################################
+  # AUTH
+  ###############################################################
+
+  - name: Write SA key
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
+
+  - name: GCP Login
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
+
+  ###############################################################
+  # FETCH RECOMMENDATIONS
+  ###############################################################
+
+  - set_fact:
+      raw_recommendations: []
+
+  - name: Fetch from all recommenders
+    loop: "{{ recommenders }}"
+    loop_control:
+      loop_var: rec
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location {{ rec.location }}
+      --recommender {{ rec.id }}
+      --format=json
+    register: rec_out
+    changed_when: false
+    failed_when: false
+
+  - name: Merge results
+    set_fact:
+      raw_recommendations: >
+        {{
+          raw_recommendations +
+          (item.stdout | default('[]') | from_json)
+        }}
+    loop: "{{ rec_out.results }}"
+
+  ###############################################################
+  # NORMALIZE OUTPUT
+  ###############################################################
+
+  - set_fact:
+      recommendations: []
+
+  - name: Normalize COST recommendations
+    loop: "{{ raw_recommendations }}"
+    when:
+      - item.primaryImpact is defined
+      - item.primaryImpact.category == "COST"
+    vars:
+      resource_name: "{{ item.content.operationGroups[0].operations[0].resource.split('/')[-1] }}"
+      saving_amount: "{{ item.primaryImpact.costProjection.cost.units | default(0) | int }}"
+      saving_currency: "{{ item.primaryImpact.costProjection.cost.currencyCode | default('USD') }}"
+    set_fact:
+      recommendations: "{{ recommendations + [ {
+        'recommender_id': item.name,
+        'recommender': item.recommenderSubtype | default('UNKNOWN'),
+        'location': item.name.split('/')[3],
+        'resource': resource_name,
+        'description': item.description,
+        'impact_category': item.primaryImpact.category,
+        'estimated_saving': {
+          'amount': saving_amount,
+          'currency': saving_currency
+        },
+        'operations': item.content.operationGroups[0].operations
+      } ] }}"
+
+  ###############################################################
+  # BUILD FINAL REPORT
+  ###############################################################
+
+  - set_fact:
+      final_report:
+        project: "{{ project_id }}"
+        generated_at: "{{ ansible_date_time.iso8601 }}"
+        summary:
+          total_recommendations: "{{ recommendations | length }}"
+        recommendations: "{{ recommendations }}"
+
+  ###############################################################
+  # SEND TO POWER AUTOMATE
+  ###############################################################
+
+  - name: Send to Flow
+    uri:
+      url: "{{ power_automate_webhook }}"
+      method: POST
+      body_format: json
+      body: "{{ final_report }}"
