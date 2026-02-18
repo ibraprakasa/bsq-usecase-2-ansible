@@ -5,7 +5,7 @@
     project_id: "joey-preprod-project"
     zone: "asia-southeast2-a"
     region: "asia-southeast2"
-    power_automate_webhook: "https://YOUR_FLOW_WEBHOOK"
+    power_automate_webhook: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ae661a2ed7514edcadc59661196aff27/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=uB31RGOx6Asj2iDJqF7LtWzOPOKPE5KXhCLg5J-_1Ss"
 
     recommenders:
       - id: "google.compute.instance.MachineTypeRecommender"
