@@ -142,7 +142,16 @@
 
   - name: Calculate total saving
     set_fact:
-      total_saving: "{{ recommendations | map(attribute='estimated_saving.amount') | sum | round(2) }}"
+      total_saving: >-
+        {{
+          (
+            recommendations
+            | map(attribute='estimated_saving.amount')
+            | map('float')
+            | sum
+          )
+          | round(2)
+        }}
 
   ###############################################################
   # BUILD FINAL REPORT
