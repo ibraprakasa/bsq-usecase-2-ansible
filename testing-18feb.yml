@@ -81,11 +81,13 @@
     when:
       - item.primaryImpact is defined
       - item.primaryImpact.category == "COST"
+      - item.primaryImpact.costProjection is defined
+      - item.primaryImpact.costProjection.cost is defined
     vars:
       operation: "{{ item.content.operationGroups[0].operations[0] }}"
       resource_full: "{{ operation.resource }}"
       resource_name: "{{ resource_full.split('/')[-1] }}"
-
+  
       action_type: >-
         {% if 'image' in resource_full %}
         delete_image
@@ -98,20 +100,18 @@
         {% else %}
         optimize_resource
         {% endif %}
-
-      # ✅ USD PROPER CALCULATION
+  
       saving_units: "{{ item.primaryImpact.costProjection.cost.units | default(0) | float }}"
       saving_nanos: "{{ item.primaryImpact.costProjection.cost.nanos | default(0) | float }}"
-      saving_amount: "{{ (saving_units + (saving_nanos / 1000000000)) | abs | round(2) }}"
+      saving_amount: "{{ (saving_units + (saving_nanos / 1000000000.0)) | abs | round(2) }}"
       saving_currency: "{{ item.primaryImpact.costProjection.cost.currencyCode | default('USD') }}"
-
-      # ✅ FIX PLACEHOLDER DESCRIPTION
+  
       description_clean: >-
         {{
           (item.description
            | regex_replace('\\$[a-zA-Z\\-]+', resource_name))
         }}
-
+  
     set_fact:
       recommendations: "{{ recommendations + [ {
         'action': action_type | trim,
