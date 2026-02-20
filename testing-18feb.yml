@@ -18,7 +18,7 @@
       - id: "google.compute.instanceGroupManager.MachineTypeRecommender"
       - id: "google.container.cluster.NodePoolRecommender"
       - id: "google.compute.disk.IdleResourceRecommender"
-      - id: "google.compute.image.IdleResourceRecommender"   # ✅ NEW
+      - id: "google.compute.image.IdleResourceRecommender"
 
   tasks:
 
@@ -37,7 +37,7 @@
     changed_when: false
 
   ###############################################################
-  # FETCH RECOMMENDATIONS (ZONE / REGION / GLOBAL SAFE LOOP)
+  # FETCH RECOMMENDATIONS
   ###############################################################
 
   - set_fact:
@@ -70,45 +70,68 @@
     loop: "{{ rec_out.results }}"
 
   ###############################################################
-  # NORMALIZE OUTPUT
+  # NORMALIZE OUTPUT (USD VERSION + SNAPSHOT FIX)
   ###############################################################
 
   - set_fact:
       recommendations: []
 
-  - name: Normalize COST recommendations (including delete_image)
+  - name: Normalize COST recommendations
     loop: "{{ raw_recommendations }}"
     when:
       - item.primaryImpact is defined
       - item.primaryImpact.category == "COST"
     vars:
       operation: "{{ item.content.operationGroups[0].operations[0] }}"
-      resource_name: "{{ operation.resource.split('/')[-1] }}"
+      resource_full: "{{ operation.resource }}"
+      resource_name: "{{ resource_full.split('/')[-1] }}"
+
       action_type: >-
-        {% if 'image' in operation.resource %}
+        {% if 'image' in resource_full %}
         delete_image
-        {% elif 'disk' in operation.resource %}
+        {% elif 'disk' in resource_full %}
         delete_disk
-        {% elif 'instance' in operation.resource %}
+        {% elif 'instance' in resource_full %}
         resize_vm
+        {% elif 'snapshot' in resource_full %}
+        delete_snapshot
         {% else %}
         optimize_resource
         {% endif %}
-      saving_amount: "{{ item.primaryImpact.costProjection.cost.units | default(0) | int }}"
+
+      # ✅ USD PROPER CALCULATION
+      saving_units: "{{ item.primaryImpact.costProjection.cost.units | default(0) | float }}"
+      saving_nanos: "{{ item.primaryImpact.costProjection.cost.nanos | default(0) | float }}"
+      saving_amount: "{{ (saving_units + (saving_nanos / 1000000000)) | abs | round(2) }}"
       saving_currency: "{{ item.primaryImpact.costProjection.cost.currencyCode | default('USD') }}"
+
+      # ✅ FIX PLACEHOLDER DESCRIPTION
+      description_clean: >-
+        {{
+          (item.description
+           | regex_replace('\\$[a-zA-Z\\-]+', resource_name))
+        }}
+
     set_fact:
       recommendations: "{{ recommendations + [ {
-        'action': action_type,
+        'action': action_type | trim,
         'resource': resource_name,
-        'category': 'COST',
-        'suggestion': 'Save cost by applying recommendation to ' ~ resource_name ~ '.',
-        'recommender_id': item.name,
         'location': item.name.split('/')[3],
         'estimated_saving': {
           'amount': saving_amount,
           'currency': saving_currency
-        }
+        },
+        'description': description_clean,
+        'recommender_id': item.name
       } ] }}"
+
+  ###############################################################
+  # TOTAL SAVING
+  ###############################################################
+
+  - name: Calculate total saving
+    set_fact:
+      total_saving: "{{ recommendations | map(attribute='estimated_saving.amount') | sum | round(2) }}"
 
   ###############################################################
   # BUILD FINAL REPORT
@@ -121,6 +144,8 @@
         generated_at: "{{ ansible_date_time.iso8601 }}"
         summary:
           total_recommendations: "{{ recommendations | length | int }}"
+          total_estimated_saving: "{{ total_saving }}"
+          currency: "USD"
         recommendations: "{{ recommendations }}"
 
   ###############################################################
@@ -134,7 +159,6 @@
       body_format: json
       body: "{{ final_report }}"
       status_code: [200, 202]
-      return_content: yes
     register: flow_response
 
   - debug:
