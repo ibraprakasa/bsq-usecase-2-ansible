@@ -101,9 +101,20 @@
         optimize_resource
         {% endif %}
   
-      saving_units: "{{ item.primaryImpact.costProjection.cost.units | default(0) | float }}"
-      saving_nanos: "{{ item.primaryImpact.costProjection.cost.nanos | default(0) | float }}"
-      saving_amount: "{{ (saving_units + (saving_nanos / 1000000000.0)) | abs | round(2) }}"
+      saving_amount: >-
+        {{
+          (
+            (item.primaryImpact.costProjection.cost.units | default(0) | float)
+            +
+            (
+              (item.primaryImpact.costProjection.cost.nanos | default(0) | float)
+              / 1000000000
+            )
+          )
+          | abs
+          | round(2)
+        }}
+  
       saving_currency: "{{ item.primaryImpact.costProjection.cost.currencyCode | default('USD') }}"
   
       description_clean: >-
