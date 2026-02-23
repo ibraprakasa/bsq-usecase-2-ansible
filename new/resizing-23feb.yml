@@ -7,14 +7,20 @@
 
   tasks:
 
-  - fail:
-      msg: "Project ID not provided"
-    when: project_id == ""
+  #################################################################
+  # VALIDATION
+  #################################################################
 
-  - meta: end_play
+  - name: Validate project_id
+    fail:
+      msg: "Project ID not provided"
+    when: project_id | length == 0
+
+  - name: End play if no input
+    meta: end_play
     when: recommendations_input | length == 0
 
-  - name: Filter valid savings
+  - name: Filter valid recommendations (saving > 0)
     set_fact:
       valid_recommendations: >-
         {{
@@ -25,54 +31,135 @@
           | list
         }}
 
-  - meta: end_play
+  - name: End play if no valid recommendations
+    meta: end_play
     when: valid_recommendations | length == 0
 
-  - name: Resize VM
-    command: >
-      gcloud compute instances set-machine-type {{ item.resource }}
-      --zone {{ item.location }}
-      --machine-type {{ item.recommended }}
-      --project {{ project_id }}
+
+  #################################################################
+  # ======================= VM FLOW ==============================
+  #################################################################
+
+  - name: VM Resize Flow
+    block:
+
+      - name: Get VM status
+        command: >
+          gcloud compute instances describe {{ item.resource }}
+          --zone {{ item.location }}
+          --project {{ project_id }}
+          --format="value(status)"
+        register: vm_status
+        changed_when: false
+
+      - name: Stop VM if running
+        command: >
+          gcloud compute instances stop {{ item.resource }}
+          --zone {{ item.location }}
+          --project {{ project_id }}
+        when: vm_status.stdout == "RUNNING"
+
+      - name: Wait until VM stopped
+        command: >
+          gcloud compute instances describe {{ item.resource }}
+          --zone {{ item.location }}
+          --project {{ project_id }}
+          --format="value(status)"
+        register: vm_wait
+        until: vm_wait.stdout == "TERMINATED"
+        retries: 10
+        delay: 15
+        changed_when: false
+
+      - name: Resize machine type
+        command: >
+          gcloud compute instances set-machine-type {{ item.resource }}
+          --zone {{ item.location }}
+          --machine-type {{ item.recommended }}
+          --project {{ project_id }}
+
+      - name: Start VM
+        command: >
+          gcloud compute instances start {{ item.resource }}
+          --zone {{ item.location }}
+          --project {{ project_id }}
+
     loop: "{{ valid_recommendations }}"
     when:
       - item.type == "vm"
       - item.recommended is defined
-    failed_when: false
 
-  - name: Resize Cloud SQL
-    command: >
-      gcloud sql instances patch {{ item.resource }}
-      --tier {{ item.recommended }}
-      --project {{ project_id }}
+
+  #################################################################
+  # ===================== CLOUD SQL FLOW =========================
+  #################################################################
+
+  - name: Cloud SQL Resize Flow
+    block:
+
+      - name: Patch Cloud SQL tier (will trigger restart)
+        command: >
+          gcloud sql instances patch {{ item.resource }}
+          --tier {{ item.recommended }}
+          --project {{ project_id }}
+          --quiet
+
+      - name: Wait Cloud SQL to be RUNNABLE
+        command: >
+          gcloud sql instances describe {{ item.resource }}
+          --project {{ project_id }}
+          --format="value(state)"
+        register: sql_status
+        until: sql_status.stdout == "RUNNABLE"
+        retries: 20
+        delay: 30
+        changed_when: false
+
     loop: "{{ valid_recommendations }}"
     when:
       - item.type == "cloudsql"
       - item.recommended is defined
-    failed_when: false
 
-  - name: Update MIG
-    command: >
-      gcloud compute instance-groups managed set-instance-template {{ item.resource }}
-      --zone {{ item.location }}
-      --template {{ item.recommended }}
-      --project {{ project_id }}
+
+  #################################################################
+  # ===================== MIG FLOW ===============================
+  #################################################################
+
+  - name: MIG Rolling Update Flow
+    block:
+
+      - name: Start rolling update
+        command: >
+          gcloud compute instance-groups managed rolling-action start-update {{ item.resource }}
+          --version template={{ item.recommended }}
+          --zone {{ item.location }}
+          --project {{ project_id }}
+
     loop: "{{ valid_recommendations }}"
     when:
       - item.type == "mig"
       - item.recommended is defined
-    failed_when: false
 
-  - name: Resize GKE
-    command: >
-      gcloud container node-pools update {{ item.resource }}
-      --cluster {{ item.cluster }}
-      --region {{ item.location }}
-      --machine-type {{ item.recommended }}
-      --project {{ project_id }}
+
+  #################################################################
+  # ===================== GKE FLOW ===============================
+  #################################################################
+
+  - name: GKE Nodepool Resize Flow
+    block:
+
+      - name: Update nodepool machine type
+        command: >
+          gcloud container node-pools update {{ item.resource }}
+          --cluster {{ item.cluster }}
+          --region {{ item.location }}
+          --machine-type {{ item.recommended }}
+          --project {{ project_id }}
+          --quiet
+
     loop: "{{ valid_recommendations }}"
     when:
       - item.type == "gke"
-      - item.cluster != ""
+      - item.cluster is defined
+      - item.cluster | length > 0
       - item.recommended is defined
-    failed_when: false
