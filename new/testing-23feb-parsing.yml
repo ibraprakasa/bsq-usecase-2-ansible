@@ -69,15 +69,46 @@
         }}
     loop: "{{ rec_out.results }}"
 
-###############################################################
-# NORMALIZE OUTPUT WITH CURRENT → RECOMMENDED
-###############################################################
-
+  ###############################################################
+  # NORMALIZE OUTPUT WITH CURRENT → RECOMMENDED (NO BLOCK)
+  ###############################################################
+  
   - set_fact:
       recommendations: []
   
-  - name: Normalize COST recommendations with resize detail
+  - name: Detect resource type
+    set_fact:
+      detected_type: >-
+        {% if 'compute.googleapis.com/Instance' in operation.resourceType | default('') %}
+        vm
+        {% elif 'sqladmin.googleapis.com/Instance' in operation.resourceType | default('') %}
+        cloudsql
+        {% elif 'compute.googleapis.com/InstanceGroupManager' in operation.resourceType | default('') %}
+        mig
+        {% elif 'container.googleapis.com/NodePool' in operation.resourceType | default('') %}
+        gke
+        {% elif 'compute.googleapis.com/Disk' in operation.resourceType | default('') %}
+        disk
+        {% elif 'compute.googleapis.com/Image' in operation.resourceType | default('') %}
+        image
+        {% else %}
+        other
+        {% endif %}
     loop: "{{ raw_recommendations }}"
+    loop_control:
+      loop_var: item
+    vars:
+      operation: "{{ item.content.operationGroups[0].operations[0] }}"
+    when:
+      - item.primaryImpact is defined
+      - item.primaryImpact.category == "COST"
+      - item.content.operationGroups is defined
+    register: type_detected
+  
+  - name: Process each recommendation
+    loop: "{{ raw_recommendations }}"
+    loop_control:
+      loop_var: item
     when:
       - item.primaryImpact is defined
       - item.primaryImpact.category == "COST"
@@ -89,7 +120,23 @@
       location: "{{ item.name.split('/')[3] }}"
       resource_type: "{{ operation.resourceType | default('') }}"
   
-      # USD saving calculation
+      detected_type: >-
+        {% if 'compute.googleapis.com/Instance' in resource_type %}
+        vm
+        {% elif 'sqladmin.googleapis.com/Instance' in resource_type %}
+        cloudsql
+        {% elif 'compute.googleapis.com/InstanceGroupManager' in resource_type %}
+        mig
+        {% elif 'container.googleapis.com/NodePool' in resource_type %}
+        gke
+        {% elif 'compute.googleapis.com/Disk' in resource_type %}
+        disk
+        {% elif 'compute.googleapis.com/Image' in resource_type %}
+        image
+        {% else %}
+        other
+        {% endif %}
+  
       saving_amount: >-
         {{
           (
@@ -101,129 +148,100 @@
           | round(2)
         }}
   
-    block:
+    block: []
   
-      ###############################################################
-      # DETECT RESOURCE CATEGORY
-      ###############################################################
+    tasks:
   
-      - set_fact:
-          detected_type: >-
-            {% if 'compute.googleapis.com/Instance' in resource_type %}
-            vm
-            {% elif 'sqladmin.googleapis.com/Instance' in resource_type %}
-            cloudsql
-            {% elif 'compute.googleapis.com/InstanceGroupManager' in resource_type %}
-            mig
-            {% elif 'container.googleapis.com/NodePool' in resource_type %}
-            gke
-            {% elif 'compute.googleapis.com/Disk' in resource_type %}
-            disk
-            {% elif 'compute.googleapis.com/Image' in resource_type %}
-            image
-            {% else %}
-            other
-            {% endif %}
+    - name: Get current VM machine type
+      command: >
+        gcloud compute instances describe {{ resource_name }}
+        --zone {{ zone }}
+        --project {{ project_id }}
+        --format=value(machineType)
+      register: current_vm
+      changed_when: false
+      failed_when: false
+      when: detected_type == "vm"
   
-      ###############################################################
-      # GET CURRENT VALUE
-      ###############################################################
+    - name: Get current Cloud SQL tier
+      command: >
+        gcloud sql instances describe {{ resource_name }}
+        --project {{ project_id }}
+        --format=value(settings.tier)
+      register: current_sql
+      changed_when: false
+      failed_when: false
+      when: detected_type == "cloudsql"
   
-      - name: Get current VM machine type
-        command: >
-          gcloud compute instances describe {{ resource_name }}
-          --zone {{ zone }}
-          --project {{ project_id }}
-          --format=value(machineType)
-        register: current_vm
-        changed_when: false
-        when: detected_type == "vm"
+    - name: Get current MIG template
+      command: >
+        gcloud compute instance-groups managed describe {{ resource_name }}
+        --zone {{ zone }}
+        --project {{ project_id }}
+        --format=value(instanceTemplate)
+      register: current_mig
+      changed_when: false
+      failed_when: false
+      when: detected_type == "mig"
   
-      - name: Get current Cloud SQL tier
-        command: >
-          gcloud sql instances describe {{ resource_name }}
-          --project {{ project_id }}
-          --format=value(settings.tier)
-        register: current_sql
-        changed_when: false
-        when: detected_type == "cloudsql"
+    - name: Get current GKE nodepool machine type
+      command: >
+        gcloud container node-pools describe {{ resource_name }}
+        --cluster {{ item.content.overview.clusterName | default('') }}
+        --region {{ region }}
+        --project {{ project_id }}
+        --format=value(config.machineType)
+      register: current_gke
+      changed_when: false
+      failed_when: false
+      when: detected_type == "gke"
   
-      - name: Get current MIG template
-        command: >
-          gcloud compute instance-groups managed describe {{ resource_name }}
-          --zone {{ zone }}
-          --project {{ project_id }}
-          --format=value(instanceTemplate)
-        register: current_mig
-        changed_when: false
-        when: detected_type == "mig"
+    - name: Build current value safely
+      set_fact:
+        current_value: >-
+          {% if detected_type == 'vm' and current_vm is defined %}
+          {{ current_vm.stdout.split('/')[-1] }}
+          {% elif detected_type == 'cloudsql' and current_sql is defined %}
+          {{ current_sql.stdout }}
+          {% elif detected_type == 'mig' and current_mig is defined %}
+          {{ current_mig.stdout.split('/')[-1] }}
+          {% elif detected_type == 'gke' and current_gke is defined %}
+          {{ current_gke.stdout }}
+          {% else %}
+          N/A
+          {% endif %}
   
-      - name: Get current GKE nodepool machine type
-        command: >
-          gcloud container node-pools describe {{ resource_name }}
-          --cluster {{ item.content.overview.clusterName | default('') }}
-          --region {{ region }}
-          --project {{ project_id }}
-          --format=value(config.machineType)
-        register: current_gke
-        changed_when: false
-        when: detected_type == "gke"
+    - name: Build target value
+      set_fact:
+        target_value: >-
+          {% if detected_type == 'vm' %}
+          {{ operation.value.split('/')[-1] }}
+          {% elif detected_type == 'cloudsql' and operation.value.settings is defined %}
+          {{ operation.value.settings.tier }}
+          {% elif detected_type == 'mig' and operation.value.instanceTemplate is defined %}
+          {{ operation.value.instanceTemplate.split('/')[-1] }}
+          {% elif detected_type == 'gke' and operation.value.nodeConfig is defined %}
+          {{ operation.value.nodeConfig.machineType }}
+          {% elif detected_type in ['disk','image'] %}
+          delete
+          {% else %}
+          optimize
+          {% endif %}
   
-      ###############################################################
-      # BUILD CURRENT VALUE
-      ###############################################################
-  
-      - set_fact:
-          current_value: >-
-            {% if detected_type == 'vm' %}
-            {{ current_vm.stdout.split('/')[-1] }}
-            {% elif detected_type == 'cloudsql' %}
-            {{ current_sql.stdout }}
-            {% elif detected_type == 'mig' %}
-            {{ current_mig.stdout.split('/')[-1] }}
-            {% elif detected_type == 'gke' %}
-            {{ current_gke.stdout }}
-            {% else %}
-            N/A
-            {% endif %}
-  
-      ###############################################################
-      # BUILD TARGET VALUE
-      ###############################################################
-  
-      - set_fact:
-          target_value: >-
-            {% if detected_type == 'vm' %}
-            {{ operation.value.split('/')[-1] }}
-            {% elif detected_type == 'cloudsql' and operation.value.settings is defined %}
-            {{ operation.value.settings.tier }}
-            {% elif detected_type == 'mig' and operation.value.instanceTemplate is defined %}
-            {{ operation.value.instanceTemplate.split('/')[-1] }}
-            {% elif detected_type == 'gke' and operation.value.nodeConfig is defined %}
-            {{ operation.value.nodeConfig.machineType }}
-            {% elif detected_type in ['disk','image'] %}
-            delete
-            {% else %}
-            optimize
-            {% endif %}
-  
-      ###############################################################
-      # APPEND FINAL STRUCTURE
-      ###############################################################
-  
-      - set_fact:
-          recommendations: "{{ recommendations + [ {
-            'type': detected_type,
-            'resource': resource_name,
-            'location': location,
-            'current': current_value | trim,
-            'recommended': target_value | trim,
-            'estimated_saving': {
-              'amount': saving_amount,
-              'currency': 'USD'
-            },
-            'recommender_id': item.name
-          } ] }}"
+    - name: Append recommendation
+      set_fact:
+        recommendations: "{{ recommendations + [ {
+          'type': detected_type,
+          'resource': resource_name,
+          'location': location,
+          'current': current_value | trim,
+          'recommended': target_value | trim,
+          'estimated_saving': {
+            'amount': saving_amount,
+            'currency': 'USD'
+          },
+          'recommender_id': item.name
+        } ] }}"
 
   ###############################################################
   # BUILD FINAL REPORT
