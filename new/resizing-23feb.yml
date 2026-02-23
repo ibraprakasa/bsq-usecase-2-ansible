@@ -1,0 +1,126 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "{{ project | default('') }}"
+    recommendations_input: "{{ recommendations | default([]) }}"
+
+  tasks:
+
+  ###############################################################
+  # VALIDATION
+  ###############################################################
+
+  - name: Fail if project missing
+    fail:
+      msg: "Project ID not provided"
+    when: project_id == ""
+
+  - name: Show message if no recommendations
+    debug:
+      msg: "No recommendations received"
+    when: recommendations_input | length == 0
+
+  - name: End play if no recommendations
+    meta: end_play
+    when: recommendations_input | length == 0
+
+  ###############################################################
+  # FILTER VALID ITEMS
+  ###############################################################
+
+  - name: Keep only valid savings > 0
+    set_fact:
+      valid_recommendations: >-
+        {{
+          recommendations_input
+          | selectattr('estimated_saving.amount', 'defined')
+          | selectattr('estimated_saving.amount', 'gt', 0)
+          | list
+        }}
+
+  - name: Stop if nothing valid
+    meta: end_play
+    when: valid_recommendations | length == 0
+
+  ###############################################################
+  # VM RESIZE
+  ###############################################################
+
+  - name: Resize VM instances
+    command: >
+      gcloud compute instances set-machine-type {{ item.resource }}
+      --zone {{ item.location }}
+      --machine-type {{ item.recommended }}
+      --project {{ project_id }}
+    loop: "{{ valid_recommendations }}"
+    when:
+      - item.type == "vm"
+      - item.recommended is defined
+      - item.current != item.recommended
+    register: vm_results
+    failed_when: false
+
+  ###############################################################
+  # CLOUD SQL RESIZE
+  ###############################################################
+
+  - name: Resize Cloud SQL
+    command: >
+      gcloud sql instances patch {{ item.resource }}
+      --tier {{ item.recommended }}
+      --project {{ project_id }}
+    loop: "{{ valid_recommendations }}"
+    when:
+      - item.type == "cloudsql"
+      - item.recommended is defined
+      - item.current != item.recommended
+    register: sql_results
+    failed_when: false
+
+  ###############################################################
+  # MIG TEMPLATE UPDATE
+  ###############################################################
+
+  - name: Update MIG template
+    command: >
+      gcloud compute instance-groups managed set-instance-template {{ item.resource }}
+      --zone {{ item.location }}
+      --template {{ item.recommended }}
+      --project {{ project_id }}
+    loop: "{{ valid_recommendations }}"
+    when:
+      - item.type == "mig"
+      - item.recommended is defined
+    register: mig_results
+    failed_when: false
+
+  ###############################################################
+  # GKE NODEPOOL RESIZE
+  ###############################################################
+
+  - name: Resize GKE nodepool
+    command: >
+      gcloud container node-pools update {{ item.resource }}
+      --cluster {{ item.cluster | default('') }}
+      --region {{ item.location }}
+      --machine-type {{ item.recommended }}
+      --project {{ project_id }}
+    loop: "{{ valid_recommendations }}"
+    when:
+      - item.type == "gke"
+      - item.recommended is defined
+    register: gke_results
+    failed_when: false
+
+  ###############################################################
+  # SUMMARY
+  ###############################################################
+
+  - name: Show summary
+    debug:
+      msg: >
+        VM: {{ vm_results.results | default([]) | length }}
+        SQL: {{ sql_results.results | default([]) | length }}
+        MIG: {{ mig_results.results | default([]) | length }}
+        GKE: {{ gke_results.results | default([]) | length }}
