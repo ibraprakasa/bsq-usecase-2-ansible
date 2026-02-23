@@ -104,6 +104,8 @@
         disk
         {% elif 'compute.googleapis.com/Image' in resource_type %}
         image
+        {% elif 'compute.googleapis.com/Snapshot' in resource_type %}
+        snapshot
         {% else %}
         other
         {% endif %}
@@ -119,7 +121,9 @@
         }}
 
       recommended_value: >-
-        {% if detected_type == 'vm' and operation.value is defined %}
+        {% if detected_type in ['disk','image','snapshot'] %}
+        delete
+        {% elif detected_type == 'vm' and operation.value is defined %}
         {{ operation.value.split('/')[-1] }}
         {% elif detected_type == 'cloudsql' and operation.value.settings is defined %}
         {{ operation.value.settings.tier }}
@@ -127,8 +131,6 @@
         {{ operation.value.instanceTemplate.split('/')[-1] }}
         {% elif detected_type == 'gke' and operation.value.nodeConfig is defined %}
         {{ operation.value.nodeConfig.machineType }}
-        {% elif detected_type in ['disk','image'] %}
-        delete
         {% else %}
         optimize
         {% endif %}
