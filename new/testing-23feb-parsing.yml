@@ -226,6 +226,35 @@
           } ] }}"
 
   ###############################################################
+  # BUILD FINAL REPORT
+  ###############################################################
+  
+  - name: Calculate total saving
+    set_fact:
+      total_saving: >-
+        {{
+          (
+            recommendations
+            | map(attribute='estimated_saving.amount')
+            | map('float')
+            | sum
+          )
+          | round(2)
+        }}
+  
+  - name: Build final report
+    set_fact:
+      final_report:
+        project: "{{ project_id }}"
+        locations: "{{ locations }}"
+        generated_at: "{{ ansible_date_time.iso8601 }}"
+        summary:
+          total_recommendations: "{{ recommendations | length }}"
+          total_estimated_saving: "{{ total_saving }}"
+          currency: "USD"
+        recommendations: "{{ recommendations }}"
+
+  ###############################################################
   # SEND TO POWER AUTOMATE
   ###############################################################
 
