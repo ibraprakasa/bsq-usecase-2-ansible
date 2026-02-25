@@ -1,0 +1,50 @@
+---
+- name: CloudSQL High Usage Watchdog
+  hosts: all
+
+  sources:
+    - ansible.eda.webhook: {}
+
+  rules:
+
+    - name: CloudSQL CPU High
+      condition: >
+        event.headers.authorization == "Bearer SECRET123"
+        and event.body.incident.metric.type ==
+        "cloudsql.googleapis.com/database/cpu/utilization"
+        and event.body.incident.state == "open"
+
+      action:
+        run_playbook:
+          name: send_high_usage_report.yml
+          extra_vars:
+            usage_type: "CPU"
+            incident: "{{ event.body.incident }}"
+
+    - name: CloudSQL Memory High
+      condition: >
+        event.headers.authorization == "Bearer SECRET123"
+        and event.body.incident.metric.type ==
+        "cloudsql.googleapis.com/database/memory/utilization"
+        and event.body.incident.state == "open"
+
+      action:
+        run_playbook:
+          name: send_high_usage_report.yml
+          extra_vars:
+            usage_type: "Memory"
+            incident: "{{ event.body.incident }}"
+
+    - name: CloudSQL Disk High
+      condition: >
+        event.headers.authorization == "Bearer SECRET123"
+        and event.body.incident.metric.type ==
+        "cloudsql.googleapis.com/database/disk/utilization"
+        and event.body.incident.state == "open"
+
+      action:
+        run_playbook:
+          name: send_high_usage_report.yml
+          extra_vars:
+            usage_type: "Disk"
+            incident: "{{ event.body.incident }}"
