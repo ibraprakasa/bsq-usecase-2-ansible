@@ -16,7 +16,7 @@
 
       action:
         run_playbook:
-          name: send_high_usage_report.yml
+          name: playbookreport-highusage-25feb.yml
           extra_vars:
             usage_type: "CPU"
             incident: "{{ event.body.incident }}"
@@ -30,7 +30,7 @@
 
       action:
         run_playbook:
-          name: send_high_usage_report.yml
+          name: playbookreport-highusage-25feb.yml
           extra_vars:
             usage_type: "Memory"
             incident: "{{ event.body.incident }}"
@@ -44,7 +44,7 @@
 
       action:
         run_playbook:
-          name: send_high_usage_report.yml
+          name: playbookreport-highusage-25feb.yml
           extra_vars:
             usage_type: "Disk"
             incident: "{{ event.body.incident }}"
