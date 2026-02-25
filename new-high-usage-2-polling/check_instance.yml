@@ -15,7 +15,7 @@
   failed_when: false
 
 - set_fact:
-    cpu_usage: "{{ cpu_result.stdout | default(0) | float }}"
+    cpu_usage: "{{ (cpu_result.stdout | default('0')) | float }}"
 
 ##################################################
 # MEMORY
