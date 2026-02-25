@@ -1,0 +1,30 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    power_automate_webhook: "https://YOUR-POWER-AUTOMATE-URL"
+
+  tasks:
+
+    - name: Build report payload
+      set_fact:
+        report:
+          alert_type: "{{ usage_type }}"
+          policy_name: "{{ incident.policy_name | default('unknown') }}"
+          resource: "{{ incident.resource_name | default('unknown') }}"
+          metric: "{{ incident.metric.type | default('unknown') }}"
+          started_at: "{{ incident.started_at | default('unknown') }}"
+          state: "{{ incident.state | default('unknown') }}"
+          severity: "HIGH"
+
+    - name: Send report to Teams via Power Automate
+      uri:
+        url: "{{ power_automate_webhook }}"
+        method: POST
+        body_format: json
+        body: "{{ report }}"
+        status_code: [200, 202]
+
+    - name: Show report (debug)
+      debug:
+        var: report
