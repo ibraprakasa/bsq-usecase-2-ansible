@@ -122,15 +122,15 @@
         }}
   
       current_machine: >-
-        {% if detected_type == 'vm' and 'from' in description %}
-        {{ description.split('from ')[1].split(' to')[0] }}
+        {% if detected_type == 'vm' and item.content.overview is defined and item.content.overview.currentMachineType is defined %}
+        {{ item.content.overview.currentMachineType.name }}
         {% else %}
         N/A
         {% endif %}
     
       recommended_machine: >-
-        {% if detected_type == 'vm' and ' to ' in description %}
-        {{ description.split(' to ')[1].replace('.', '') }}
+        {% if detected_type == 'vm' and item.content.overview is defined and item.content.overview.recommendedMachineType is defined %}
+        {{ item.content.overview.recommendedMachineType.name }}
         {% else %}
         optimize
         {% endif %}
