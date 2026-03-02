@@ -1,0 +1,14 @@
+---
+- name: CloudSQL High Usage Polling (80%)
+  hosts: localhost
+
+  sources:
+    - ansible.eda.interval:
+        seconds: 300
+
+  rules:
+    - name: Run CloudSQL high usage check
+      condition: true
+      action:
+        run_playbook:
+          name: playbook_cloudsql_high.yml
