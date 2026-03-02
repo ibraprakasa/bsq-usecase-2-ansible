@@ -181,6 +181,13 @@
   ###############################################################
   # BUILD SUMMARY
   ###############################################################
+  - name: DEBUG recomendation
+    debug:
+      var: current
+
+  - name: DEBUG recomendation
+    debug:
+      var: recommended
 
   - name: Calculate total saving
     set_fact:
