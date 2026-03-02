@@ -85,7 +85,12 @@
       - item.primaryImpact.category == "COST"
       - item.content.operationGroups is defined
     vars:
-      operation: "{{ item.content.operationGroups[0].operations[0] }}"
+      operation: >-
+        {{
+          (item.content.operationGroups[0].operations
+          | selectattr('action','equalto','replace')
+          | list)[0]
+        }}
       resource_full: "{{ operation.resource }}"
       resource_name: "{{ resource_full.split('/')[-1] }}"
       location: "{{ item.name.split('/')[3] }}"
@@ -122,14 +127,14 @@
         }}
   
       current_machine: >-
-        {% if detected_type == 'vm' and item.content.overview is defined and item.content.overview.currentMachineType is defined %}
+        {% if detected_type == 'vm' and item.content.overview is defined %}
         {{ item.content.overview.currentMachineType.name }}
         {% else %}
         N/A
         {% endif %}
     
       recommended_machine: >-
-        {% if detected_type == 'vm' and item.content.overview is defined and item.content.overview.recommendedMachineType is defined %}
+        {% if detected_type == 'vm' and item.content.overview is defined %}
         {{ item.content.overview.recommendedMachineType.name }}
         {% else %}
         optimize
