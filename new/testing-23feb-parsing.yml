@@ -62,11 +62,7 @@
 
   - name: Merge results
     set_fact:
-      raw_recommendations: >
-        {{
-          raw_recommendations +
-          (item.stdout | default('[]') | from_json)
-        }}
+      raw_recommendations: "{{ raw_recommendations + (item.stdout | default('[]') | from_json) }}"
     loop: "{{ rec_out.results }}"
 
 ###############################################################
@@ -87,7 +83,7 @@
   - set_fact:
       recommendations: []
 
-  - name: Process recommendations
+  - name: Parse recommendation variables
     loop: "{{ raw_recommendations }}"
     loop_control:
       loop_var: item
@@ -95,7 +91,6 @@
       - item.primaryImpact is defined
       - item.primaryImpact.category == "COST"
       - item.content.overview is defined
-
     vars:
 
       operation: >-
@@ -112,7 +107,6 @@
       resource_name: "{{ resource_full.split('/')[-1] }}"
       location: "{{ item.name.split('/')[3] }}"
       resource_type: "{{ operation.resourceType | default('') }}"
-      description: "{{ item.description | default('') }}"
 
       detected_type: >-
         {% if 'currentMachineType' in item.content.overview %}
@@ -157,68 +151,66 @@
         optimize
         {% endif %}
 
-      recommended_value: >-
-        {% if detected_type in ['disk','image','snapshot'] %}
-        delete
-        {% elif detected_type == 'cloudsql' and operation.value.settings is defined %}
-        {{ operation.value.settings.tier }}
-        {% elif detected_type == 'mig' and operation.value.instanceTemplate is defined %}
-        {{ operation.value.instanceTemplate.split('/')[-1] }}
-        {% elif detected_type == 'gke' and operation.value.nodeConfig is defined %}
-        {{ operation.value.nodeConfig.machineType }}
-        {% else %}
-        optimize
-        {% endif %}
+    debug:
+      msg:
+        resource: "{{ resource_name }}"
+        detected_type: "{{ detected_type }}"
+        current_machine: "{{ current_machine }}"
+        recommended_machine: "{{ recommended_machine }}"
 
-    block:
+  - name: Append recommendation
+    loop: "{{ raw_recommendations }}"
+    loop_control:
+      loop_var: item
+    when:
+      - item.primaryImpact is defined
+      - item.primaryImpact.category == "COST"
+      - item.content.overview is defined
 
-      - name: DEBUG parsing variables
-        debug:
-          msg:
-            resource: "{{ resource_name }}"
-            resource_type: "{{ resource_type }}"
-            detected_type: "{{ detected_type }}"
-            current_machine: "{{ current_machine }}"
-            recommended_machine: "{{ recommended_machine }}"
+    vars:
+      current_machine: "{{ item.content.overview.currentMachineType.name }}"
+      recommended_machine: "{{ item.content.overview.recommendedMachineType.name }}"
+      resource_name: "{{ item.content.overview.resourceName }}"
+      location: "{{ item.content.overview.location }}"
+      saving_amount: >-
+        {{
+          (
+            (item.primaryImpact.costProjection.cost.units | default(0) | float)
+            +
+            ((item.primaryImpact.costProjection.cost.nanos | default(0) | float) / 1000000000)
+          )
+          | abs | round(2)
+        }}
 
-      - name: Append recommendation
-        set_fact:
-          recommendations: "{{ recommendations + [ {
-            'type': detected_type | trim,
-            'resource': resource_name,
-            'location': location,
-            'current': current_machine | trim,
-            'recommended': (
-              recommended_machine if detected_type == 'vm'
-              else recommended_value
-            ) | trim,
-            'estimated_saving': {
-              'amount': saving_amount,
-              'currency': 'USD'
-            },
-            'recommender_id': item.name
-          } ] }}"
+    set_fact:
+      recommendations: "{{ recommendations + [ {
+        'type': 'vm',
+        'resource': resource_name,
+        'location': location,
+        'current': current_machine,
+        'recommended': recommended_machine,
+        'estimated_saving': {
+          'amount': saving_amount,
+          'currency': 'USD'
+        },
+        'recommender_id': item.name
+      } ] }}"
 
 ###############################################################
-# BUILD SUMMARY
+# DEBUG RESULT
 ###############################################################
 
   - name: DEBUG recommendations array
     debug:
       var: recommendations
 
+###############################################################
+# BUILD SUMMARY
+###############################################################
+
   - name: Calculate total saving
     set_fact:
-      total_saving: >-
-        {{
-          (
-            recommendations
-            | map(attribute='estimated_saving.amount')
-            | map('float')
-            | sum
-          )
-          | round(2)
-        }}
+      total_saving: "{{ recommendations | map(attribute='estimated_saving.amount') | map('float') | sum | round(2) }}"
 
   - name: Build final report
     set_fact:
