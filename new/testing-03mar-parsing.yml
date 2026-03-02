@@ -19,8 +19,6 @@
       - id: "google.cloudsql.instance.PerformanceRecommender"
       - id: "google.compute.instanceGroupManager.MachineTypeRecommender"
       - id: "google.container.cluster.NodePoolRecommender"
-      - id: "google.compute.disk.IdleResourceRecommender"
-      - id: "google.compute.image.IdleResourceRecommender"
 
   tasks:
 
