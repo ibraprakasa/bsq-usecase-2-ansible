@@ -2,7 +2,9 @@
   gather_facts: true
 
   vars:
-    project_id: "joey-preprod-project"
+    projects:
+    - "joey-preprod-project"
+    - "orms-sta-project"
     zone: "asia-southeast2-a"
     region: "asia-southeast2"
     power_automate_webhook: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ae661a2ed7514edcadc59661196aff27/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=uB31RGOx6Asj2iDJqF7LtWzOPOKPE5KXhCLg5J-_1Ss"
@@ -44,10 +46,11 @@
       raw_recommendations: []
 
   - name: Fetch from all recommenders and locations
-    loop: "{{ recommenders | product(locations) | list }}"
+    loop: "{{ projects | product(recommenders, locations) | list }}"
     loop_control:
       loop_var: combo
     vars:
+      project_id: "{{ combo.0 }}"
       rec: "{{ combo.0 }}"
       loc: "{{ combo.1 }}"
     command: >
@@ -137,6 +140,7 @@
 
     set_fact:
       recommendations: "{{ recommendations + [ {
+        'project': item.name.split('/')[1],
         'type': detected_type | trim,
         'resource': resource_name,
         'location': location,
