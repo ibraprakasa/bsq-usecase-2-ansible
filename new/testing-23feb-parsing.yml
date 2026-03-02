@@ -1,0 +1,196 @@
+- hosts: localhost
+  gather_facts: true
+
+  vars:
+    project_id: "joey-preprod-project"
+    zone: "asia-southeast2-a"
+    region: "asia-southeast2"
+    power_automate_webhook: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ae661a2ed7514edcadc59661196aff27/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=uB31RGOx6Asj2iDJqF7LtWzOPOKPE5KXhCLg5J-_1Ss"
+
+    locations:
+      - "{{ zone }}"
+      - "{{ region }}"
+      - "global"
+
+    recommenders:
+      - id: "google.compute.instance.MachineTypeRecommender"
+      - id: "google.cloudsql.instance.PerformanceRecommender"
+      - id: "google.compute.instanceGroupManager.MachineTypeRecommender"
+      - id: "google.container.cluster.NodePoolRecommender"
+      - id: "google.compute.disk.IdleResourceRecommender"
+      - id: "google.compute.image.IdleResourceRecommender"
+
+  tasks:
+
+  ###############################################################
+  # AUTH
+  ###############################################################
+
+  - name: Write SA key
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
+
+  - name: GCP Login
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
+
+  ###############################################################
+  # FETCH RECOMMENDATIONS
+  ###############################################################
+
+  - set_fact:
+      raw_recommendations: []
+
+  - name: Fetch from all recommenders and locations
+    loop: "{{ recommenders | product(locations) | list }}"
+    loop_control:
+      loop_var: combo
+    vars:
+      rec: "{{ combo.0 }}"
+      loc: "{{ combo.1 }}"
+    command: >
+      gcloud recommender recommendations list
+      --project {{ project_id }}
+      --location {{ loc }}
+      --recommender {{ rec.id }}
+      --format=json
+    register: rec_out
+    changed_when: false
+    failed_when: false
+
+  - name: Merge results
+    set_fact:
+      raw_recommendations: >
+        {{
+          raw_recommendations +
+          (item.stdout | default('[]') | from_json)
+        }}
+    loop: "{{ rec_out.results }}"
+
+  ###############################################################
+  # BUILD RECOMMENDATION LIST
+  ###############################################################
+
+  - set_fact:
+      recommendations: []
+
+  - name: Process recommendations
+    loop: "{{ raw_recommendations }}"
+    loop_control:
+      loop_var: item
+    when:
+      - item.primaryImpact is defined
+      - item.primaryImpact.category == "COST"
+      - item.content.operationGroups is defined
+    vars:
+      operation: "{{ item.content.operationGroups[0].operations[0] }}"
+      resource_full: "{{ operation.resource }}"
+      resource_name: "{{ resource_full.split('/')[-1] }}"
+      location: "{{ item.name.split('/')[3] }}"
+      resource_type: "{{ operation.resourceType | default('') }}"
+
+      detected_type: >-
+        {% if 'compute.googleapis.com/Instance' in resource_type %}
+        vm
+        {% elif 'sqladmin.googleapis.com/Instance' in resource_type %}
+        cloudsql
+        {% elif 'compute.googleapis.com/InstanceGroupManager' in resource_type %}
+        mig
+        {% elif 'container.googleapis.com/NodePool' in resource_type %}
+        gke
+        {% elif 'compute.googleapis.com/Disk' in resource_type %}
+        disk
+        {% elif 'compute.googleapis.com/Image' in resource_type %}
+        image
+        {% elif 'compute.googleapis.com/Snapshot' in resource_type %}
+        snapshot
+        {% else %}
+        other
+        {% endif %}
+
+      saving_amount: >-
+        {{
+          (
+            (item.primaryImpact.costProjection.cost.units | default(0) | float)
+            +
+            ((item.primaryImpact.costProjection.cost.nanos | default(0) | float) / 1000000000)
+          )
+          | abs | round(2)
+        }}
+
+      recommended_value: >-
+        {% if detected_type in ['disk','image','snapshot'] %}
+        delete
+        {% elif detected_type == 'vm' and operation.value is defined %}
+        {{ operation.value.split('/')[-1] }}
+        {% elif detected_type == 'cloudsql' and operation.value.settings is defined %}
+        {{ operation.value.settings.tier }}
+        {% elif detected_type == 'mig' and operation.value.instanceTemplate is defined %}
+        {{ operation.value.instanceTemplate.split('/')[-1] }}
+        {% elif detected_type == 'gke' and operation.value.nodeConfig is defined %}
+        {{ operation.value.nodeConfig.machineType }}
+        {% else %}
+        optimize
+        {% endif %}
+
+    set_fact:
+      recommendations: "{{ recommendations + [ {
+        'type': detected_type | trim,
+        'resource': resource_name,
+        'location': location,
+        'current': 'N/A',
+        'recommended': recommended_value | trim,
+        'estimated_saving': {
+          'amount': saving_amount,
+          'currency': 'USD'
+        },
+        'recommender_id': item.name
+      } ] }}"
+
+  ###############################################################
+  # BUILD SUMMARY
+  ###############################################################
+
+  - name: Calculate total saving
+    set_fact:
+      total_saving: >-
+        {{
+          (
+            recommendations
+            | map(attribute='estimated_saving.amount')
+            | map('float')
+            | sum
+          )
+          | round(2)
+        }}
+
+  - name: Build final report
+    set_fact:
+      final_report:
+        project: "{{ project_id }}"
+        locations: "{{ locations }}"
+        generated_at: "{{ ansible_date_time.iso8601 }}"
+        summary:
+          total_recommendations: "{{ recommendations | length }}"
+          total_estimated_saving: "{{ total_saving }}"
+          currency: "USD"
+        recommendations: "{{ recommendations }}"
+
+  ###############################################################
+  # SEND TO POWER AUTOMATE
+  ###############################################################
+
+  - name: Send to Flow
+    uri:
+      url: "{{ power_automate_webhook }}"
+      method: POST
+      body_format: json
+      body: "{{ final_report }}"
+      status_code: [200, 202]
+    register: flow_response
+
+  - name: Show Flow response
+    debug:
+      var: flow_response
