@@ -166,22 +166,22 @@
             current_machine: "{{ current_machine }}"
             recommended_machine: "{{ recommended_machine }}"
 
-    set_fact:
-      recommendations: "{{ recommendations + [ {
-        'type': detected_type | trim,
-        'resource': resource_name,
-        'location': location,
-        'current': current_machine | trim,
-        'recommended': (
-          recommended_machine if detected_type == 'vm'
-          else recommended_value
-        ) | trim,
-        'estimated_saving': {
-          'amount': saving_amount,
-          'currency': 'USD'
-        },
-        'recommender_id': item.name
-      } ] }}"
+      - set_fact:
+          recommendations: "{{ recommendations + [ {
+            'type': detected_type | trim,
+            'resource': resource_name,
+            'location': location,
+            'current': current_machine | trim,
+            'recommended': (
+              recommended_machine if detected_type == 'vm'
+              else recommended_value
+            ) | trim,
+            'estimated_saving': {
+              'amount': saving_amount,
+              'currency': 'USD'
+            },
+            'recommender_id': item.name
+          } ] }}"
 
   ###############################################################
   # BUILD SUMMARY
