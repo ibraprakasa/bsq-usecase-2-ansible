@@ -89,7 +89,8 @@
         {{
           (item.content.operationGroups[0].operations
           | selectattr('action','equalto','replace')
-          | list)[0]
+          | list
+          | first)
         }}
       resource_full: "{{ operation.resource }}"
       resource_name: "{{ resource_full.split('/')[-1] }}"
@@ -98,7 +99,7 @@
       description: "{{ item.description | default('') }}"
 
       detected_type: >-
-        {% if 'compute.googleapis.com/Instance' in resource_type %}
+        {% if item.content.overview is defined and item.content.overview.currentMachineType is defined %}
         vm
         {% elif 'sqladmin.googleapis.com/Instance' in resource_type %}
         cloudsql
@@ -127,14 +128,18 @@
         }}
   
       current_machine: >-
-        {% if detected_type == 'vm' and item.content.overview is defined %}
+        {% if detected_type == 'vm'
+           and item.content.overview is defined
+           and item.content.overview.currentMachineType is defined %}
         {{ item.content.overview.currentMachineType.name }}
         {% else %}
         N/A
         {% endif %}
     
       recommended_machine: >-
-        {% if detected_type == 'vm' and item.content.overview is defined %}
+        {% if detected_type == 'vm'
+           and item.content.overview is defined
+           and item.content.overview.recommendedMachineType is defined %}
         {{ item.content.overview.recommendedMachineType.name }}
         {% else %}
         optimize
