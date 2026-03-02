@@ -181,12 +181,6 @@
   ###############################################################
   # BUILD SUMMARY
   ###############################################################
-  - name: DEBUG VM parsing
-    debug:
-      msg:
-        detected_type: "{{ detected_type }}"
-        current_machine: "{{ current_machine }}"
-        recommended_machine: "{{ recommended_machine }}"
 
   - name: Calculate total saving
     set_fact:
