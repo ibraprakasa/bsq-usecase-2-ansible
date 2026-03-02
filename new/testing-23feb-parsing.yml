@@ -158,6 +158,14 @@
         optimize
         {% endif %}
 
+      - name: DEBUG VM parsing
+        debug:
+          msg:
+            resource: "{{ resource_name }}"
+            detected_type: "{{ detected_type }}"
+            current_machine: "{{ current_machine }}"
+            recommended_machine: "{{ recommended_machine }}"
+
     set_fact:
       recommendations: "{{ recommendations + [ {
         'type': detected_type | trim,
