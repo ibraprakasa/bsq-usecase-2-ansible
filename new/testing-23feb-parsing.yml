@@ -211,6 +211,10 @@
   # SEND TO POWER AUTOMATE
   ###############################################################
 
+  - name: DEBUG final report
+    debug:
+      var: final_report
+    
   - name: Send to Flow
     uri:
       url: "{{ power_automate_webhook }}"
