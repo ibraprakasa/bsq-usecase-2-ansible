@@ -83,7 +83,7 @@
     when:
       - item.primaryImpact is defined
       - item.primaryImpact.category == "COST"
-      - item.content.operationGroups is defined
+      - item.content.overview is defined
     vars:
       operation: >-
         {{
@@ -91,15 +91,17 @@
           | selectattr('action','equalto','replace')
           | list
           | first)
+          if item.content.operationGroups is defined
+          else {}
         }}
-      resource_full: "{{ operation.resource }}"
+      resource_full: "{{ operation.resource | default('') }}"
       resource_name: "{{ resource_full.split('/')[-1] }}"
       location: "{{ item.name.split('/')[3] }}"
       resource_type: "{{ operation.resourceType | default('') }}"
       description: "{{ item.description | default('') }}"
 
       detected_type: >-
-        {% if item.content.overview is defined and item.content.overview.currentMachineType is defined %}
+        {% if item.content.overview.currentMachineType is defined %}
         vm
         {% elif 'sqladmin.googleapis.com/Instance' in resource_type %}
         cloudsql
