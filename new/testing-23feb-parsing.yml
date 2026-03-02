@@ -22,9 +22,9 @@
 
   tasks:
 
-  ###############################################################
-  # AUTH
-  ###############################################################
+###############################################################
+# AUTH
+###############################################################
 
   - name: Write SA key
     copy:
@@ -36,9 +36,9 @@
     command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
     changed_when: false
 
-  ###############################################################
-  # FETCH RECOMMENDATIONS
-  ###############################################################
+###############################################################
+# FETCH RECOMMENDATIONS
+###############################################################
 
   - set_fact:
       raw_recommendations: []
@@ -69,9 +69,20 @@
         }}
     loop: "{{ rec_out.results }}"
 
-  ###############################################################
-  # BUILD RECOMMENDATION LIST
-  ###############################################################
+###############################################################
+# DEBUG RAW DATA
+###############################################################
+
+  - name: DEBUG raw recommendation sample
+    debug:
+      msg:
+        overview: "{{ item.content.overview | default('NO_OVERVIEW') }}"
+        operations: "{{ item.content.operationGroups | default('NO_OPERATIONS') }}"
+    loop: "{{ raw_recommendations }}"
+
+###############################################################
+# BUILD RECOMMENDATION LIST
+###############################################################
 
   - set_fact:
       recommendations: []
@@ -84,7 +95,9 @@
       - item.primaryImpact is defined
       - item.primaryImpact.category == "COST"
       - item.content.overview is defined
+
     vars:
+
       operation: >-
         {{
           (item.content.operationGroups[0].operations
@@ -94,6 +107,7 @@
           if item.content.operationGroups is defined
           else {}
         }}
+
       resource_full: "{{ operation.resource | default('') }}"
       resource_name: "{{ resource_full.split('/')[-1] }}"
       location: "{{ item.name.split('/')[3] }}"
@@ -118,7 +132,7 @@
         {% else %}
         other
         {% endif %}
-  
+
       saving_amount: >-
         {{
           (
@@ -128,21 +142,21 @@
           )
           | abs | round(2)
         }}
-  
+
       current_machine: >-
         {% if detected_type == 'vm' %}
         {{ item.content.overview.currentMachineType.name }}
         {% else %}
         N/A
         {% endif %}
-    
+
       recommended_machine: >-
         {% if detected_type == 'vm' %}
         {{ item.content.overview.recommendedMachineType.name }}
         {% else %}
         optimize
         {% endif %}
-  
+
       recommended_value: >-
         {% if detected_type in ['disk','image','snapshot'] %}
         delete
@@ -155,28 +169,43 @@
         {% else %}
         optimize
         {% endif %}
-   
 
-    set_fact:
-      recommendations: "{{ recommendations + [ {
-        'type': detected_type | trim,
-        'resource': resource_name,
-        'location': location,
-        'current': current_machine | trim,
-        'recommended': (
-          recommended_machine if detected_type == 'vm'
-          else recommended_value
-        ) | trim,
-        'estimated_saving': {
-          'amount': saving_amount,
-          'currency': 'USD'
-        },
-        'recommender_id': item.name
-      } ] }}"
+    block:
 
-  ###############################################################
-  # BUILD SUMMARY
-  ###############################################################
+      - name: DEBUG parsing variables
+        debug:
+          msg:
+            resource: "{{ resource_name }}"
+            resource_type: "{{ resource_type }}"
+            detected_type: "{{ detected_type }}"
+            current_machine: "{{ current_machine }}"
+            recommended_machine: "{{ recommended_machine }}"
+
+      - name: Append recommendation
+        set_fact:
+          recommendations: "{{ recommendations + [ {
+            'type': detected_type | trim,
+            'resource': resource_name,
+            'location': location,
+            'current': current_machine | trim,
+            'recommended': (
+              recommended_machine if detected_type == 'vm'
+              else recommended_value
+            ) | trim,
+            'estimated_saving': {
+              'amount': saving_amount,
+              'currency': 'USD'
+            },
+            'recommender_id': item.name
+          } ] }}"
+
+###############################################################
+# BUILD SUMMARY
+###############################################################
+
+  - name: DEBUG recommendations array
+    debug:
+      var: recommendations
 
   - name: Calculate total saving
     set_fact:
@@ -203,14 +232,14 @@
           currency: "USD"
         recommendations: "{{ recommendations }}"
 
-  ###############################################################
-  # SEND TO POWER AUTOMATE
-  ###############################################################
+###############################################################
+# SEND TO POWER AUTOMATE
+###############################################################
 
   - name: DEBUG final report
     debug:
       var: final_report
-    
+
   - name: Send to Flow
     uri:
       url: "{{ power_automate_webhook }}"
