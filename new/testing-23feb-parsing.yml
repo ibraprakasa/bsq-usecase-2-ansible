@@ -130,18 +130,14 @@
         }}
   
       current_machine: >-
-        {% if detected_type == 'vm'
-           and item.content.overview is defined
-           and item.content.overview.currentMachineType is defined %}
+        {% if detected_type == 'vm' %}
         {{ item.content.overview.currentMachineType.name }}
         {% else %}
         N/A
         {% endif %}
     
       recommended_machine: >-
-        {% if detected_type == 'vm'
-           and item.content.overview is defined
-           and item.content.overview.recommendedMachineType is defined %}
+        {% if detected_type == 'vm' %}
         {{ item.content.overview.recommendedMachineType.name }}
         {% else %}
         optimize
