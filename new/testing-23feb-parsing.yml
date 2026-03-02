@@ -101,7 +101,7 @@
       description: "{{ item.description | default('') }}"
 
       detected_type: >-
-        {% if item.content.overview.currentMachineType is defined %}
+        {% if 'compute.googleapis.com/Instance' in resource_type %}
         vm
         {% elif 'sqladmin.googleapis.com/Instance' in resource_type %}
         cloudsql
