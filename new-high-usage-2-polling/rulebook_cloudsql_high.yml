@@ -1,6 +1,5 @@
 ---
 - name: CloudSQL High Usage Polling (80%)
-  hosts: localhost
 
   sources:
     - ansible.eda.interval:
