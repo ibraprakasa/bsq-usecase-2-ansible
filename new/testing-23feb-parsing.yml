@@ -85,63 +85,79 @@
       - item.primaryImpact.category == "COST"
       - item.content.operationGroups is defined
     vars:
-      operation: "{{ item.content.operationGroups[0].operations[0] }}"
-      resource_full: "{{ operation.resource }}"
-      resource_name: "{{ resource_full.split('/')[-1] }}"
-      location: "{{ item.name.split('/')[3] }}"
-      resource_type: "{{ operation.resourceType | default('') }}"
+    operation: "{{ item.content.operationGroups[0].operations[0] }}"
+    resource_full: "{{ operation.resource }}"
+    resource_name: "{{ resource_full.split('/')[-1] }}"
+    location: "{{ item.name.split('/')[3] }}"
+    resource_type: "{{ operation.resourceType | default('') }}"
+    description: "{{ item.description | default('') }}"
 
-      detected_type: >-
-        {% if 'compute.googleapis.com/Instance' in resource_type %}
-        vm
-        {% elif 'sqladmin.googleapis.com/Instance' in resource_type %}
-        cloudsql
-        {% elif 'compute.googleapis.com/InstanceGroupManager' in resource_type %}
-        mig
-        {% elif 'container.googleapis.com/NodePool' in resource_type %}
-        gke
-        {% elif 'compute.googleapis.com/Disk' in resource_type %}
-        disk
-        {% elif 'compute.googleapis.com/Image' in resource_type %}
-        image
-        {% elif 'compute.googleapis.com/Snapshot' in resource_type %}
-        snapshot
-        {% else %}
-        other
-        {% endif %}
+    detected_type: >-
+      {% if 'compute.googleapis.com/Instance' in resource_type %}
+      vm
+      {% elif 'sqladmin.googleapis.com/Instance' in resource_type %}
+      cloudsql
+      {% elif 'compute.googleapis.com/InstanceGroupManager' in resource_type %}
+      mig
+      {% elif 'container.googleapis.com/NodePool' in resource_type %}
+      gke
+      {% elif 'compute.googleapis.com/Disk' in resource_type %}
+      disk
+      {% elif 'compute.googleapis.com/Image' in resource_type %}
+      image
+      {% elif 'compute.googleapis.com/Snapshot' in resource_type %}
+      snapshot
+      {% else %}
+      other
+      {% endif %}
 
-      saving_amount: >-
-        {{
-          (
-            (item.primaryImpact.costProjection.cost.units | default(0) | float)
-            +
-            ((item.primaryImpact.costProjection.cost.nanos | default(0) | float) / 1000000000)
-          )
-          | abs | round(2)
-        }}
+    saving_amount: >-
+      {{
+        (
+          (item.primaryImpact.costProjection.cost.units | default(0) | float)
+          +
+          ((item.primaryImpact.costProjection.cost.nanos | default(0) | float) / 1000000000)
+        )
+        | abs | round(2)
+      }}
 
-      recommended_value: >-
-        {% if detected_type in ['disk','image','snapshot'] %}
-        delete
-        {% elif detected_type == 'vm' and operation.path == '/machineType' %}
-        {{ operation.value.split('/')[-1] }}
-        {% elif detected_type == 'cloudsql' and operation.value.settings is defined %}
-        {{ operation.value.settings.tier }}
-        {% elif detected_type == 'mig' and operation.value.instanceTemplate is defined %}
-        {{ operation.value.instanceTemplate.split('/')[-1] }}
-        {% elif detected_type == 'gke' and operation.value.nodeConfig is defined %}
-        {{ operation.value.nodeConfig.machineType }}
-        {% else %}
-        optimize
-        {% endif %}
+    current_machine: >-
+      {% if detected_type == 'vm' and 'from' in description %}
+      {{ description.split('from ')[1].split(' to')[0] }}
+      {% else %}
+      N/A
+      {% endif %}
+  
+    recommended_machine: >-
+      {% if detected_type == 'vm' and ' to ' in description %}
+      {{ description.split(' to ')[1].replace('.', '') }}
+      {% else %}
+      optimize
+      {% endif %}
+
+    recommended_value: >-
+      {% if detected_type in ['disk','image','snapshot'] %}
+      delete
+      {% elif detected_type == 'cloudsql' and operation.value.settings is defined %}
+      {{ operation.value.settings.tier }}
+      {% elif detected_type == 'mig' and operation.value.instanceTemplate is defined %}
+      {{ operation.value.instanceTemplate.split('/')[-1] }}
+      {% elif detected_type == 'gke' and operation.value.nodeConfig is defined %}
+      {{ operation.value.nodeConfig.machineType }}
+      {% else %}
+      optimize
+      {% endif %}
 
     set_fact:
       recommendations: "{{ recommendations + [ {
         'type': detected_type | trim,
         'resource': resource_name,
         'location': location,
-        'current': 'N/A',
-        'recommended': recommended_value | trim,
+        'current': current_machine | trim,
+        'recommended': (
+          recommended_machine if detected_type == 'vm'
+          else recommended_value
+        ) | trim,
         'estimated_saving': {
           'amount': saving_amount,
           'currency': 'USD'
