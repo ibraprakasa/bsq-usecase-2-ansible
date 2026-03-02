@@ -15,7 +15,7 @@
   failed_when: false
 
 - set_fact:
-    cpu_usage: "{{ (cpu_result.stdout | default('0')) | float }}"
+    cpu_usage: "{{ cpu_result.stdout | default('0') | trim | float }}"
 
 ##################################################
 # MEMORY
@@ -34,7 +34,7 @@
   failed_when: false
 
 - set_fact:
-    memory_usage: "{{ memory_result.stdout | default(0) | float }}"
+    memory_usage: "{{ memory_result.stdout | default('0') | trim | float }}"
 
 ##################################################
 # DISK
@@ -53,7 +53,7 @@
   failed_when: false
 
 - set_fact:
-    disk_usage: "{{ disk_result.stdout | default(0) | float }}"
+    disk_usage: "{{ disk_result.stdout | default('0') | trim | float }}"
 
 ##################################################
 # EVALUATE
@@ -68,6 +68,6 @@
       'disk_percent': (disk_usage * 100) | round(2)
     } ] }}"
   when: >
-    cpu_usage >= cpu_threshold
-    or memory_usage >= memory_threshold
-    or disk_usage >= disk_threshold
+    cpu_usage | float >= cpu_threshold
+    or memory_usage | float >= memory_threshold
+    or disk_usage | float >= disk_threshold
