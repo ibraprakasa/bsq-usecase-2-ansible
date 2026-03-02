@@ -101,7 +101,7 @@
       description: "{{ item.description | default('') }}"
 
       detected_type: >-
-        {% if 'compute.googleapis.com/Instance' in resource_type %}
+        {% if item.content.overview.currentMachineType is defined %}
         vm
         {% elif 'sqladmin.googleapis.com/Instance' in resource_type %}
         cloudsql
@@ -181,13 +181,12 @@
   ###############################################################
   # BUILD SUMMARY
   ###############################################################
-  - name: DEBUG recomendation
+  - name: DEBUG VM parsing
     debug:
-      var: current
-
-  - name: DEBUG recomendation
-    debug:
-      var: recommended
+      msg:
+        detected_type: "{{ detected_type }}"
+        current_machine: "{{ current_machine }}"
+        recommended_machine: "{{ recommended_machine }}"
 
   - name: Calculate total saving
     set_fact:
