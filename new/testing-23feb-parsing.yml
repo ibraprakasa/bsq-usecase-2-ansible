@@ -123,7 +123,7 @@
       recommended_value: >-
         {% if detected_type in ['disk','image','snapshot'] %}
         delete
-        {% elif detected_type == 'vm' and operation.value is defined %}
+        {% if detected_type == 'vm' and operation.path == '/machineType' %}
         {{ operation.value.split('/')[-1] }}
         {% elif detected_type == 'cloudsql' and operation.value.settings is defined %}
         {{ operation.value.settings.tier }}
