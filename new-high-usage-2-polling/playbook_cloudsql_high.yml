@@ -2,8 +2,9 @@
   gather_facts: false
 
   vars:
-    project_id: "orms-sta-project"
-
+   # project_id: "orms-sta-project"
+    project_id: "joey-preprod-project"
+    
     cpu_threshold: 0.80
     memory_threshold: 0.80
     disk_threshold: 0.80
