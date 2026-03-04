@@ -1,7 +1,7 @@
 ### POST MODEL, GCP KE AAP ###
 ---
 - name: CloudSQL High Usage Watchdog
-  hosts: all
+  hosts: localhost
 
   sources:
     - ansible.eda.webhook: {}
