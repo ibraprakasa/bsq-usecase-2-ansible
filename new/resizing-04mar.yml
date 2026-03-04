@@ -1,0 +1,124 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "{{ project | default('') }}"
+    recommendations_input: "{{ recommendations | default([]) }}"
+
+  tasks:
+
+  #################################################################
+  # VALIDATION
+  #################################################################
+
+  - name: Validate project_id
+    fail:
+      msg: "Project ID not provided"
+    when: project_id | length == 0
+
+  - name: End play if no input
+    meta: end_play
+    when: recommendations_input | length == 0
+
+  - name: Filter valid recommendations (saving > 0)
+    set_fact:
+      valid_recommendations: >-
+        {{
+          recommendations_input
+          | selectattr('estimated_saving', 'defined')
+          | selectattr('estimated_saving.amount', 'defined')
+          | selectattr('estimated_saving.amount', 'gt', 0)
+          | list
+        }}
+
+  - name: End play if no valid recommendations
+    meta: end_play
+    when: valid_recommendations | length == 0
+
+
+  #################################################################
+  # ======================= VM FLOW ==============================
+  #################################################################
+
+  - name: VM Resize Flow
+    include_tasks: vm_tasks
+    loop: "{{ valid_recommendations }}"
+    loop_control:
+      loop_var: item
+    when:
+      - item.type == "vm"
+      - item.recommended is defined
+    vars:
+      vm_tasks: |
+        - name: Get VM status
+          command: >
+            gcloud compute instances describe {{ item.resource }}
+            --zone {{ item.location }}
+            --project {{ project_id }}
+            --format="value(status)"
+          register: vm_status
+          changed_when: false
+
+        - name: Stop VM if running
+          command: >
+            gcloud compute instances stop {{ item.resource }}
+            --zone {{ item.location }}
+            --project {{ project_id }}
+          when: vm_status.stdout == "RUNNING"
+
+        - name: Wait until VM stopped
+          command: >
+            gcloud compute instances describe {{ item.resource }}
+            --zone {{ item.location }}
+            --project {{ project_id }}
+            --format="value(status)"
+          register: vm_wait
+          until: vm_wait.stdout == "TERMINATED"
+          retries: 10
+          delay: 15
+          changed_when: false
+
+        - name: Resize machine type
+          command: >
+            gcloud compute instances set-machine-type {{ item.resource }}
+            --zone {{ item.location }}
+            --machine-type {{ item.recommended }}
+            --project {{ project_id }}
+
+        - name: Start VM
+          command: >
+            gcloud compute instances start {{ item.resource }}
+            --zone {{ item.location }}
+            --project {{ project_id }}
+
+
+  #################################################################
+  # ===================== CLOUD SQL FLOW =========================
+  #################################################################
+
+  - name: Cloud SQL Resize Flow
+    include_tasks: sql_tasks
+    loop: "{{ valid_recommendations }}"
+    loop_control:
+      loop_var: item
+    when:
+      - item.type == "cloudsql"
+    vars:
+      sql_tasks: |
+        - name: Patch Cloud SQL tier (will trigger restart)
+          command: >
+            gcloud sql instances patch {{ item.resource }}
+            --tier {{ item.recommended }}
+            --project {{ project_id }}
+            --quiet
+
+        - name: Wait Cloud SQL to be RUNNABLE
+          command: >
+            gcloud sql instances describe {{ item.resource }}
+            --project {{ project_id }}
+            --format="value(state)"
+          register: sql_status
+          until: sql_status.stdout == "RUNNABLE"
+          retries: 20
+          delay: 30
+          changed_when: false
