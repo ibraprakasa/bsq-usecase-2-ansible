@@ -16,8 +16,8 @@
         and event.body.incident.state == "open"
 
       action:
-        run_playbook:
-          name: playbook.yml
+        run_job_template:
+          name: Case 2 - Report High Usage based on Rulebook
           extra_vars:
             usage_type: "CPU"
             incident: "{{ event.body.incident }}"
@@ -30,8 +30,8 @@
         and event.body.incident.state == "open"
 
       action:
-        run_playbook:
-          name: playbook.yml
+        run_job_template:
+          name: Case 2 - Report High Usage based on Rulebook
           extra_vars:
             usage_type: "Memory"
             incident: "{{ event.body.incident }}"
@@ -44,8 +44,8 @@
         and event.body.incident.state == "open"
 
       action:
-        run_playbook:
-          name: playbook.yml
+        run_job_template:
+          name: Case 2 - Report High Usage based on Rulebook
           extra_vars:
             usage_type: "Disk"
             incident: "{{ event.body.incident }}"
