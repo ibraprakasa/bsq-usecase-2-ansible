@@ -1,0 +1,41 @@
+### POST MODEL, GCP KE AAP ###
+---
+- name: CloudSQL High Usage Watchdog
+  hosts: localhost
+
+  sources:
+    - ansible.eda.webhook: 
+        host: 0.0.0.0
+        port: 5000
+
+  rules:
+
+    - name: CloudSQL CPU High
+      condition: true
+
+      action:
+        run_job_template:
+          name: Case 2 - Report High Usage based on Rulebook
+          extra_vars:
+            usage_type: "CPU"
+            incident: "{{ event.body.incident }}"
+
+    - name: CloudSQL Memory High
+      condition: true
+
+      action:
+        run_job_template:
+          name: Case 2 - Report High Usage based on Rulebook
+          extra_vars:
+            usage_type: "Memory"
+            incident: "{{ event.body.incident }}"
+
+    - name: CloudSQL Disk High
+      condition: true
+
+      action:
+        run_job_template:
+          name: Case 2 - Report High Usage based on Rulebook
+          extra_vars:
+            usage_type: "Disk"
+            incident: "{{ event.body.incident }}"
