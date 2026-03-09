@@ -2,7 +2,7 @@
   gather_facts: false
 
   vars:
-    project_id: "your-gcp-project"
+    project_id: "orms-sta-project"
     zone: "asia-southeast2-a"
 
     power_automate_webhook: "https://YOUR-POWER-AUTOMATE-URL"
