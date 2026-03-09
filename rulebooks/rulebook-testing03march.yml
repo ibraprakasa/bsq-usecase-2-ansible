@@ -8,7 +8,7 @@
 
   rules:
     - name: Instance CPU High
-      condition: event.data.incident.state == "open"
+      condition: incident.state == "open"
       action:
         run_job_template:
           name: Case 2 - Report High Usage based on Rulebook
