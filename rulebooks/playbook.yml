@@ -5,7 +5,7 @@
     project_id: "orms-sta-project"
     zone: "asia-southeast2-a"
 
-    power_automate_webhook: "https://YOUR-POWER-AUTOMATE-URL"
+    power_automate_webhook: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/9d45c6f7a85443b3b6e177cdbed4593f/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=k_L8OAke-PRu1QeCdN9uajkJlzXq2ZWVXcT7eKnLYpo"
 
   tasks:
 
