@@ -2,20 +2,27 @@
   gather_facts: false
 
   vars:
+    project_id: "your-gcp-project"
+    zone: "asia-southeast2-a"
+
     power_automate_webhook: "https://YOUR-POWER-AUTOMATE-URL"
 
   tasks:
 
+    - name: Get list of GCP instances
+      google.cloud.gcp_compute_instance_info:
+        project: "{{ project_id }}"
+        zone: "{{ zone }}"
+      register: instance_info
+
     - name: Build report payload
       set_fact:
         report:
-          alert_type: "{{ usage_type }}"
-          policy_name: "{{ incident.policy_name | default('unknown') }}"
-          resource: "{{ incident.resource_name | default('unknown') }}"
-          metric: "{{ incident.metric.type | default('unknown') }}"
-          started_at: "{{ incident.started_at | default('unknown') }}"
-          state: "{{ incident.state | default('unknown') }}"
-          severity: "HIGH"
+          alert_type: "GCP_INSTANCE_REPORT"
+          project: "{{ project_id }}"
+          instance_count: "{{ instance_info.resources | length }}"
+          instances: "{{ instance_info.resources | map(attribute='name') | list }}"
+          severity: "INFO"
 
     - name: Send report to Teams via Power Automate
       uri:
@@ -25,6 +32,6 @@
         body: "{{ report }}"
         status_code: [200, 202]
 
-    - name: Show report (debug)
+    - name: Show report
       debug:
         var: report
