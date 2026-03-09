@@ -10,30 +10,27 @@
 
     - name: CloudSQL CPU High
       condition: true
-
       action:
         run_job_template:
           name: Case 2 - Report High Usage based on Rulebook
           extra_vars:
             usage_type: "CPU"
-            incident: "{{ event.body.incident }}"
+            incident: "{{ event.payload | default({}) }}"
 
     - name: CloudSQL Memory High
       condition: true
-
       action:
         run_job_template:
           name: Case 2 - Report High Usage based on Rulebook
           extra_vars:
             usage_type: "Memory"
-            incident: "{{ event.body.incident }}"
+            incident: "{{ event.payload | default({}) }}"
 
     - name: CloudSQL Disk High
       condition: true
-
       action:
         run_job_template:
           name: Case 2 - Report High Usage based on Rulebook
           extra_vars:
             usage_type: "Disk"
-            incident: "{{ event.body.incident }}"
+            incident: "{{ event.payload | default({}) }}"
