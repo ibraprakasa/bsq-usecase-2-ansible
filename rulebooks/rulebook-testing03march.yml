@@ -4,7 +4,10 @@
   hosts: localhost
 
   sources:
-    - ansible.eda.controller_event_stream:
+    - ansible.eda.redis:
+        host: redis
+        port: 6379
+        channel: eda
 
   rules:
 
