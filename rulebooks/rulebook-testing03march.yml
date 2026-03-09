@@ -7,7 +7,7 @@
         subscription: cloudsql-alert-sub
 
   rules:
-    - name: CloudSQL CPU High
+    - name: Instance CPU High
       condition: event.data.incident.state == "open"
       action:
         run_job_template:
