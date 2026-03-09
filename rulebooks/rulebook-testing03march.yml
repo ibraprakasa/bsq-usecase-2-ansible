@@ -2,9 +2,9 @@
   hosts: localhost
 
   sources:
-    - google.cloud.pubsub:
-        project_id: orms-sta-project
-        subscription: cloudsql-alert-sub
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5000
 
   rules:
     - name: debug event
