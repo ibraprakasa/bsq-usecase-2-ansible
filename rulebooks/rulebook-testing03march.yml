@@ -2,10 +2,9 @@
   hosts: localhost
 
   sources:
-    - ansible.eda.generic:
-        run: python3 gcp_alert_listener.py
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: /runner/env/gcp-sa-preprod
+    - ansible.eda.command:
+        command: python3 gcp_alert_listener.py
+        parse_json: true
 
   rules:
     - name: alert detected
