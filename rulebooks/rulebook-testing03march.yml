@@ -10,5 +10,5 @@
     - name: alert detected
       condition: true
       action:
-        debug:
-          msg: "{{ event }}"
+        run_job_template:
+          name: hello_world
