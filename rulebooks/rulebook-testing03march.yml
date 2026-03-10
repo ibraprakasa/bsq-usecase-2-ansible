@@ -1,13 +1,12 @@
-- name: GCP Alert Listener
+- name: GCP monitoring listener
   hosts: localhost
 
   sources:
-    - ansible.eda.webhook:
-        host: 0.0.0.0
-        port: 5000
+    - ansible.eda.generic:
+        run: python3 gcp_alert_listener.py
 
   rules:
-    - name: debug event
+    - name: alert detected
       condition: true
       action:
         debug:
