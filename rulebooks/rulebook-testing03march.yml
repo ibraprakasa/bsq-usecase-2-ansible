@@ -3,8 +3,9 @@
 
   sources:
     - ansible.eda.generic:
-        payload:
+        run_command:
           command: python3 gcp_alert_listener.py
+          parse_json: true
 
   rules:
     - name: alert detected
