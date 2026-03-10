@@ -5,7 +5,7 @@
     - ansible.eda.generic:
         run: python3 gcp_alert_listener.py
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: gcp-sa.json
+          GOOGLE_APPLICATION_CREDENTIALS: /runner/env/gcp-sa-preprod
 
   rules:
     - name: alert detected
