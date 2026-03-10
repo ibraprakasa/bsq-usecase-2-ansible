@@ -2,11 +2,11 @@
   hosts: localhost
 
   sources:
-    - ansible.eda.process:
-        command: python3 gcp_alert_listener.py
+    - eda.builtin.generic:
+        payload:
+          command: python3 gcp_alert_listener.py
         parse_json: true
-        restart: true
-
+        
   rules:
     - name: alert detected
       condition: true
