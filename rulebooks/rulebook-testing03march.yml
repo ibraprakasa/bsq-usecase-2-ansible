@@ -2,10 +2,9 @@
   hosts: localhost
 
   sources:
-    - eda.builtin.generic:
-        payload:
-          command: python3 gcp_alert_listener.py
-        parse_json: true
+    - eda.builtin.webhook:
+        host: 0.0.0.0
+        port: 5000
         
   rules:
     - name: alert detected
