@@ -2,9 +2,9 @@
   hosts: localhost
 
   sources:
-    - ansible.eda.command:
-        command: python3 gcp_alert_listener.py
-        parse_json: true
+    - ansible.eda.generic:
+        payload:
+          command: python3 gcp_alert_listener.py
 
   rules:
     - name: alert detected
