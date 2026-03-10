@@ -9,6 +9,16 @@
 
   tasks:
 
+    - name: Write SA key
+      copy:
+        content: "{{ gcp_sa_key }}"
+        dest: /tmp/gcp-sa.json
+        mode: '0600'
+
+    - name: GCP Login
+      command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+      changed_when: false
+
     - name: Get list of GCP instances
       google.cloud.gcp_compute_instance_info:
         project: "{{ project_id }}"
