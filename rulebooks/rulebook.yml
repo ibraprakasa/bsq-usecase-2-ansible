@@ -1,53 +1,18 @@
-### POST MODEL, GCP KE AAP ###
 ---
-- name: CloudSQL High Usage Watchdog
+- name: Listen GCP Monitoring Alerts
   hosts: localhost
 
   sources:
-    - ansible.eda.webhook: 
-        host: 0.0.0.0
-        port: 5000
+    - ansible.eda.gcp_pubsub:
+        project_id: orms-sta-project
+        subscription: cloudsql-alert-sub
+        credentials_file: /runner/gcp-sa-preprod.json
 
   rules:
 
-    - name: CloudSQL CPU High
-      condition: >
-        event.headers.authorization == "Bearer SECRET123"
-        and event.body.incident.metric.type ==
-        "cloudsql.googleapis.com/database/cpu/utilization"
-        and event.body.incident.state == "open"
-
+    - name: CPU alert detected
+      condition: event.data.incident.state == "open"
       action:
         run_job_template:
-          name: Case 2 - Report High Usage based on Rulebook
-          extra_vars:
-            usage_type: "CPU"
-            incident: "{{ event.body.incident }}"
-
-    - name: CloudSQL Memory High
-      condition: >
-        event.headers.authorization == "Bearer SECRET123"
-        and event.body.incident.metric.type ==
-        "cloudsql.googleapis.com/database/memory/utilization"
-        and event.body.incident.state == "open"
-
-      action:
-        run_job_template:
-          name: Case 2 - Report High Usage based on Rulebook
-          extra_vars:
-            usage_type: "Memory"
-            incident: "{{ event.body.incident }}"
-
-    - name: CloudSQL Disk High
-      condition: >
-        event.headers.authorization == "Bearer SECRET123"
-        and event.body.incident.metric.type ==
-        "cloudsql.googleapis.com/database/disk/utilization"
-        and event.body.incident.state == "open"
-
-      action:
-        run_job_template:
-          name: Case 2 - Report High Usage based on Rulebook
-          extra_vars:
-            usage_type: "Disk"
-            incident: "{{ event.body.incident }}"
+          name: hello_world
+          organization: Default
