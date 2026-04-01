@@ -12,7 +12,7 @@
       condition: event.incident.state == "open"
       action:
         run_job_template:
-          name: Case 2 - Report High Usage based on Rulebook
+          name: rulebook-usecase2-highusage
           organization: Default
           extra_vars:
             event: "{{ event }}"
@@ -22,7 +22,7 @@
       condition: event.incident.state == "closed"
       action:
         run_job_template:
-          name: Case 2 - Report High Usage based on Rulebook
+          name: rulebook-usecase2-highusage
           organization: Default
           extra_vars:
             event: "{{ event }}"
