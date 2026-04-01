@@ -5,11 +5,25 @@
     - ansible.eda.webhook:
         host: 0.0.0.0
         port: 5000
-        
+
   rules:
-    - name: alert detected
-      condition: true
+
+    - name: alert still happening
+      condition: event.incident.state == "open"
       action:
         run_job_template:
-          name: hello_world
+          name: Case 2 - Report High Usage based on Rulebook
           organization: Default
+          extra_vars:
+            event: "{{ event }}"
+            alert_status: "OPEN"
+
+    - name: alert resolved
+      condition: event.incident.state == "closed"
+      action:
+        run_job_template:
+          name: Case 2 - Report High Usage based on Rulebook
+          organization: Default
+          extra_vars:
+            event: "{{ event }}"
+            alert_status: "CLOSED"
