@@ -8,8 +8,8 @@
 
   rules:
 
-    - name: alert still happening
-      condition: event.incident.state == "open"
+    - name: alerting
+      condition: true
       action:
         run_job_template:
           name: rulebook-usecase2-highusage
@@ -18,12 +18,3 @@
             event: "{{ event }}"
             alert_status: "OPEN"
 
-    - name: alert resolved
-      condition: event.incident.state == "closed"
-      action:
-        run_job_template:
-          name: rulebook-usecase2-highusage
-          organization: Default
-          extra_vars:
-            event: "{{ event }}"
-            alert_status: "CLOSED"
