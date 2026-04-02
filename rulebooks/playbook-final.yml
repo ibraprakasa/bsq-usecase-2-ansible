@@ -43,7 +43,7 @@
             Summary:<br>
             {{ report.summary }}<br><br>
     
-            🔗 {{ report.link }}
+            🔗 <a href="{{ report.link }}">Click here to view alert</a>
 
     - name: Send alert to Teams
       uri:
