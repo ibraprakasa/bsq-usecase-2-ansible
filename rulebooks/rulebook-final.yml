@@ -15,4 +15,4 @@
           name: rulebook-usecase2-highusage
           organization: Default
           extra_vars:
-            event: event
+            event: "{{ event }}"
