@@ -6,8 +6,8 @@
 
   tasks:
     - name: DEBUG incoming vars
-        debug:
-          var: ansible_eda.event
+      debug:
+        var: ansible_eda.event
 
     - name: Build formatted alert report
       set_fact:
