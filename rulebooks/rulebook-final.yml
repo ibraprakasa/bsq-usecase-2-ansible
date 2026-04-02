@@ -13,15 +13,3 @@
         run_job_template:
           name: rulebook-usecase2-highusage
           organization: Default
-          extra_vars:
-            instance_name: "{{ event.payload.incident.metric.labels.instance_name }}"
-            cpu: "{{ event.payload.incident.observed_value }}"
-            policy: "{{ event.payload.incident.policy_name }}"
-            severity: "{{ event.payload.incident.severity }}"
-            state: "{{ event.payload.incident.state }}"
-            project: "{{ event.payload.incident.resource.labels.project_id }}"
-            metric: "{{ event.payload.incident.metric.displayName }}"
-            threshold: "{{ event.payload.incident.threshold_value }}"
-            summary: "{{ event.payload.incident.summary }}"
-            started_at: "{{ event.payload.incident.started_at }}"
-            link: "{{ event.payload.incident.url }}"
