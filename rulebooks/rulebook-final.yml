@@ -15,4 +15,7 @@
           name: rulebook-usecase2-highusage
           organization: Default
           extra_vars:
-            eda_event: "{{ event }}"
+            instance_name: "{{ event.payload.incident.metric.labels.instance_name }}"
+            cpu: "{{ event.payload.incident.observed_value }}"
+            policy: "{{ event.payload.incident.policy_name }}"
+            severity: "{{ event.payload.incident.severity }}"
