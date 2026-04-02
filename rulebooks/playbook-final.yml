@@ -2,46 +2,53 @@
   gather_facts: false
 
   vars:
-    project_id: "orms-sta-project"
-    zone: "asia-southeast2-a"
-
     power_automate_webhook: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/9d45c6f7a85443b3b6e177cdbed4593f/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=k_L8OAke-PRu1QeCdN9uajkJlzXq2ZWVXcT7eKnLYpo"
 
   tasks:
 
-    - name: Write SA key
-      copy:
-        content: "{{ gcp_sa_key }}"
-        dest: /tmp/gcp-sa.json
-        mode: '0600'
-
-    - name: GCP Login
-      command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
-      changed_when: false
-
-    - name: Get list of GCP instances
-      google.cloud.gcp_compute_instance_info:
-        project: "{{ project_id }}"
-        zone: "{{ zone }}"
-      register: instance_info
-
-    - name: Build report payload
+    - name: Build formatted alert report
       set_fact:
         report:
-          alert_type: "GCP_INSTANCE_REPORT"
-          project: "{{ project_id }}"
-          instance_count: "{{ instance_info.resources | length }}"
-          instances: "{{ instance_info.resources | map(attribute='name') | list }}"
-          severity: "INFO"
+          title: "🚨 GCP Alert Notification"
+          status: "{{ alert_status }}"
+          project: "{{ event.incident.resource.labels.project_id }}"
+          instance: "{{ event.incident.resource_display_name }}"
+          metric: "{{ event.incident.metric.displayName }}"
+          value: "{{ event.incident.observed_value }}"
+          threshold: "{{ event.incident.threshold_value }}"
+          severity: "{{ event.incident.severity }}"
+          summary: "{{ event.incident.summary }}"
+          time_started: "{{ event.incident.started_at }}"
+          link: "{{ event.incident.url }}"
 
-    - name: Send report to Teams via Power Automate
+    - name: Build Teams message (formatted)
+      set_fact:
+        teams_payload:
+          text: |
+            🚨 **GCP Alert Detected**
+
+            **Status**   : {{ report.status }}
+            **Project**  : {{ report.project }}
+            **Instance** : {{ report.instance }}
+
+            **Metric**   : {{ report.metric }}
+            **Value**    : {{ report.value }}
+            **Threshold**: {{ report.threshold }}
+
+            **Severity** : {{ report.severity }}
+
+            **Summary**:
+            {{ report.summary }}
+
+            🔗 {{ report.link }}
+
+    - name: Send alert to Teams
       uri:
         url: "{{ power_automate_webhook }}"
         method: POST
         body_format: json
-        body: "{{ report }}"
+        body: "{{ teams_payload }}"
         status_code: [200, 202]
 
-    - name: Show report
-      debug:
-        var: report
+    - debug:
+        var: teams_payload
