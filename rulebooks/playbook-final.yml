@@ -27,22 +27,22 @@
     - name: Build Teams message
       set_fact:
         teams_payload:
-          text: |
-            🚨 **GCP Alert Detected**
-
-            **Status**   : {{ report.status }}
-            **Project**  : {{ report.project }}
-            **Instance** : {{ report.instance }}
-
-            **Metric**   : {{ report.metric }}
-            **Value**    : {{ report.value }}
-            **Threshold**: {{ report.threshold }}
-
-            **Severity** : {{ report.severity }}
-
-            **Summary**:
-            {{ report.summary }}
-
+          text: >
+            🚨 <b>GCP Alert Detected</b><br><br>
+    
+            Status   : {{ report.status }}<br>
+            Project  : {{ report.project }}<br>
+            Instance : {{ report.instance }}<br><br>
+    
+            Metric   : {{ report.metric }}<br>
+            Value    : {{ report.value }}<br>
+            Threshold: {{ report.threshold }}<br><br>
+    
+            Severity : {{ report.severity }}<br><br>
+    
+            Summary:<br>
+            {{ report.summary }}<br><br>
+    
             🔗 {{ report.link }}
 
     - name: Send alert to Teams
