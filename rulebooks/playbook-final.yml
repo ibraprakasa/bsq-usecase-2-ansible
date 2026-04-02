@@ -10,7 +10,7 @@
       set_fact:
         report:
           title: "🚨 GCP Alert Notification"
-          status: "{{ alert_status }}"
+          status: "{{ event.incident.state | upper }}"
           project: "{{ event.incident.resource.labels.project_id }}"
           instance: "{{ event.incident.resource_display_name }}"
           metric: "{{ event.incident.metric.displayName }}"
