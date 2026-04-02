@@ -10,16 +10,16 @@
       set_fact:
         report:
           title: "🚨 GCP Alert Notification"
-          status: "{{ event.incident.state | upper }}"
-          project: "{{ event.incident.resource.labels.project_id }}"
-          instance: "{{ event.incident.resource_display_name }}"
-          metric: "{{ event.incident.metric.displayName }}"
-          value: "{{ event.incident.observed_value }}"
-          threshold: "{{ event.incident.threshold_value }}"
-          severity: "{{ event.incident.severity }}"
-          summary: "{{ event.incident.summary }}"
-          time_started: "{{ event.incident.started_at }}"
-          link: "{{ event.incident.url }}"
+          status: "{{ state | upper }}"
+          project: "{{ project }}"
+          instance: "{{ instance_name }}"
+          metric: "{{ metric }}"
+          value: "{{ cpu }}"
+          threshold: "{{ threshold }}"
+          severity: "{{ severity }}"
+          summary: "{{ summary }}"
+          time_started: "{{ started_at }}"
+          link: "{{ link }}"
 
     - name: Build Teams message (formatted)
       set_fact:
@@ -50,5 +50,6 @@
         body: "{{ teams_payload }}"
         status_code: [200, 202]
 
-    - debug:
+    - name: Debug payload
+      debug:
         var: teams_payload
