@@ -2,30 +2,29 @@
   gather_facts: false
 
   vars:
-    power_automate_webhook: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/9d45c6f7a85443b3b6e177cdbed4593f/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=k_L8OAke-PRu1QeCdN9uajkJlzXq2ZWVXcT7eKnLYpo"
+    power_automate_webhook: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com/..."
 
   tasks:
-
     - name: DEBUG incoming vars
-      debug:
-        var: vars
+        debug:
+          var: ansible_eda.event
 
     - name: Build formatted alert report
       set_fact:
         report:
           title: "🚨 GCP Alert Notification"
-          status: "{{ state | upper }}"
-          project: "{{ project }}"
-          instance: "{{ instance_name }}"
-          metric: "{{ metric }}"
-          value: "{{ cpu }}"
-          threshold: "{{ threshold }}"
-          severity: "{{ severity }}"
-          summary: "{{ summary }}"
-          time_started: "{{ started_at }}"
-          link: "{{ link }}"
+          status: "{{ ansible_eda.event.payload.incident.state | upper }}"
+          project: "{{ ansible_eda.event.payload.incident.resource.labels.project_id }}"
+          instance: "{{ ansible_eda.event.payload.incident.metric.labels.instance_name }}"
+          metric: "{{ ansible_eda.event.payload.incident.metric.displayName }}"
+          value: "{{ ansible_eda.event.payload.incident.observed_value }}"
+          threshold: "{{ ansible_eda.event.payload.incident.threshold_value }}"
+          severity: "{{ ansible_eda.event.payload.incident.severity }}"
+          summary: "{{ ansible_eda.event.payload.incident.summary }}"
+          time_started: "{{ ansible_eda.event.payload.incident.started_at }}"
+          link: "{{ ansible_eda.event.payload.incident.url }}"
 
-    - name: Build Teams message (formatted)
+    - name: Build Teams message
       set_fact:
         teams_payload:
           text: |
