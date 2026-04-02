@@ -6,6 +6,10 @@
 
   tasks:
 
+    - name: DEBUG incoming vars
+      debug:
+        var: vars
+
     - name: Build formatted alert report
       set_fact:
         report:
