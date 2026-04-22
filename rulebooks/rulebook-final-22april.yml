@@ -8,7 +8,6 @@
 
   rules:
 
-    # ✅ OPEN → boleh repeat tapi di-limit
     - name: alert open (rate limit)
       condition: event.payload.incident.state == "open"
       action:
@@ -19,7 +18,6 @@
         group_by: "{{ event.payload.incident.incident_id }}"
         seconds: 60
 
-    # ✅ CLOSED → hanya sekali
     - name: alert closed (once only)
       condition: event.payload.incident.state == "closed"
       action:
