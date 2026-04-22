@@ -7,13 +7,24 @@
         port: 5000
 
   rules:
-    - name: alerting
-      condition: >
-        event.payload.incident.state in ["open", "closed"]
+
+    # ✅ OPEN → boleh repeat tapi di-limit
+    - name: alert open (rate limit)
+      condition: event.payload.incident.state == "open"
       action:
         run_job_template:
           name: rulebook-usecase2-highusage
           organization: Default
       throttle:
         group_by: "{{ event.payload.incident.incident_id }}"
-        seconds: 30
+        seconds: 60
+
+    # ✅ CLOSED → hanya sekali
+    - name: alert closed (once only)
+      condition: event.payload.incident.state == "closed"
+      action:
+        run_job_template:
+          name: rulebook-usecase2-highusage
+          organization: Default
+      throttle:
+        once: "{{ event.payload.incident.incident_id }}-closed"
