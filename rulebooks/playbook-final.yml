@@ -52,6 +52,7 @@
         body_format: json
         body: "{{ teams_payload }}"
         status_code: [200, 202]
+        timeout: 15
 
     - name: Debug payload
       debug:
