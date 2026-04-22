@@ -9,10 +9,11 @@
   rules:
     - name: alerting
       condition: >
-        event.payload.incident.state == "open"
+        event.payload.incident.state in ["open", "closed"]
       action:
         run_job_template:
           name: rulebook-usecase2-highusage
           organization: Default
       throttle:
-        once: "{{ event.payload.incident.incident_id }}"
+        group_by: "{{ event.payload.incident.incident_id }}"
+        seconds: 30
