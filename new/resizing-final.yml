@@ -8,6 +8,22 @@
   tasks:
 
   #################################################################
+  # GCP AUTH
+  #################################################################
+
+  - name: Write SA key
+    copy:
+      content: "{{ gcp_sa_key }}"
+      dest: /tmp/gcp-sa.json
+      mode: '0600'
+    when: gcp_sa_key is defined
+
+  - name: GCP Login
+    command: gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+    changed_when: false
+    when: gcp_sa_key is defined
+
+  #################################################################
   # VALIDATION
   #################################################################
 
