@@ -21,26 +21,26 @@
     - name: Convert metric values based on type
       set_fact:
         value_converted: >-
-          {% if 'memory' in metric_type %}
-            {{ ((raw_value | float) / 1073741824) | round(2) }}
-          {% elif 'network' in metric_type %}
-            {{ ((raw_value | float) / 1048576) | round(2) }}
-          {% elif 'cpu' in metric_type %}
-            {{ ((raw_value | float) * 100) | round(2) }}
-          {% else %}
-            {{ (raw_value | float) | round(3) }}
-          {% endif %}
-    
-        threshold_converted: >-
-          {% if 'memory' in metric_type %}
-            {{ ((raw_threshold | float) / 1073741824) | round(2) }}
-          {% elif 'network' in metric_type %}
-            {{ ((raw_threshold | float) / 1048576) | round(2) }}
-          {% elif 'cpu' in metric_type %}
-            {{ ((raw_threshold | float) * 100) | round(2) }}
-          {% else %}
-            {{ (raw_threshold | float) | round(3) }}
-          {% endif %}
+          {{
+            ((raw_value | float) / 1073741824) | round(2)
+            if 'memory' in metric_type else
+            ((raw_value | float) / 1048576) | round(2)
+            if 'network' in metric_type else
+            ((raw_value | float) * 100) | round(2)
+            if 'cpu' in metric_type else
+            (raw_value | float) | round(3)
+          }}
+
+    threshold_converted: >-
+      {{
+        ((raw_threshold | float) / 1073741824) | round(2)
+        if 'memory' in metric_type else
+        ((raw_threshold | float) / 1048576) | round(2)
+        if 'network' in metric_type else
+        ((raw_threshold | float) * 100) | round(2)
+        if 'cpu' in metric_type else
+        (raw_threshold | float) | round(3)
+      }}
 
     # 🔹 STEP 3: build report
     - name: Build formatted alert report
