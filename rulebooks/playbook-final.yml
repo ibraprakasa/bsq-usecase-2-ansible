@@ -42,6 +42,19 @@
             (raw_threshold | float) | round(3)
           }}
 
+    - name: Set unit based on metric
+      set_fact:
+        unit: >-
+          {% if 'memory' in metric_type %}
+            GiB
+          {% elif 'network' in metric_type %}
+            MB/s
+          {% elif 'cpu' in metric_type %}
+            %
+          {% else %}
+            value
+          {% endif %}
+
     # 🔹 STEP 3: build report
     - name: Build formatted alert report
       set_fact:
