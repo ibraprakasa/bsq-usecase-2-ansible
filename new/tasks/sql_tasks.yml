@@ -1,0 +1,17 @@
+- name: Patch Cloud SQL tier
+  command: >
+    gcloud sql instances patch {{ item.resource }}
+    --tier {{ item.recommended }}
+    --project {{ project_id }}
+    --quiet
+
+- name: Wait Cloud SQL to be RUNNABLE
+  command: >
+    gcloud sql instances describe {{ item.resource }}
+    --project {{ project_id }}
+    --format="value(state)"
+  register: sql_status
+  until: sql_status.stdout == "RUNNABLE"
+  retries: 20
+  delay: 30
+  changed_when: false
