@@ -5,10 +5,55 @@
     power_automate_webhook: "https://default4d237fc5b1dd42efa9e264887cb44b.21.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/9d45c6f7a85443b3b6e177cdbed4593f/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=k_L8OAke-PRu1QeCdN9uajkJlzXq2ZWVXcT7eKnLYpo"
 
   tasks:
+
     - name: DEBUG incoming vars
       debug:
         var: ansible_eda.event
 
+    # 🔹 STEP 1: ambil raw data
+    - name: Normalize base values
+      set_fact:
+        metric_type: "{{ ansible_eda.event.payload.incident.metric.type }}"
+        raw_value: "{{ ansible_eda.event.payload.incident.observed_value | float }}"
+        raw_threshold: "{{ ansible_eda.event.payload.incident.threshold_value | float }}"
+
+    # 🔹 STEP 2: convert otomatis berdasarkan metric
+    - name: Convert metric values based on type
+      set_fact:
+        value_converted: >-
+          {% if 'memory' in metric_type %}
+            {{ (raw_value / 1073741824) | round(2) }}
+          {% elif 'network' in metric_type %}
+            {{ (raw_value / 1048576) | round(2) }}
+          {% elif 'cpu' in metric_type %}
+            {{ (raw_value * 100) | round(2) }}
+          {% else %}
+            {{ raw_value | round(3) }}
+          {% endif %}
+
+        threshold_converted: >-
+          {% if 'memory' in metric_type %}
+            {{ (raw_threshold / 1073741824) | round(2) }}
+          {% elif 'network' in metric_type %}
+            {{ (raw_threshold / 1048576) | round(2) }}
+          {% elif 'cpu' in metric_type %}
+            {{ (raw_threshold * 100) | round(2) }}
+          {% else %}
+            {{ raw_threshold | round(3) }}
+          {% endif %}
+
+        unit: >-
+          {% if 'memory' in metric_type %}
+            GiB
+          {% elif 'network' in metric_type %}
+            MB/s
+          {% elif 'cpu' in metric_type %}
+            %
+          {% else %}
+            value
+          {% endif %}
+
+    # 🔹 STEP 3: build report
     - name: Build formatted alert report
       set_fact:
         report:
@@ -17,34 +62,38 @@
           project: "{{ ansible_eda.event.payload.incident.resource.labels.project_id }}"
           instance: "{{ ansible_eda.event.payload.incident.metric.labels.instance_name }}"
           metric: "{{ ansible_eda.event.payload.incident.metric.displayName }}"
-          value: "{{ ansible_eda.event.payload.incident.observed_value }}"
-          threshold: "{{ ansible_eda.event.payload.incident.threshold_value }}"
+          metric_type: "{{ metric_type }}"
+          value: "{{ value_converted }}"
+          threshold: "{{ threshold_converted }}"
+          unit: "{{ unit }}"
           severity: "{{ ansible_eda.event.payload.incident.severity }}"
           summary: "{{ ansible_eda.event.payload.incident.summary }}"
           time_started: "{{ ansible_eda.event.payload.incident.started_at }}"
           link: "{{ ansible_eda.event.payload.incident.url }}"
 
+    # 🔹 STEP 4: build message
     - name: Build Teams message
       set_fact:
         teams_payload:
           text: >
             🚨 <b>GCP Alert Detected</b><br><br>
-    
+
             Status   : {{ report.status }}<br>
             Project  : {{ report.project }}<br>
             Instance : {{ report.instance }}<br><br>
-    
-            Metric   : {{ report.metric }}<br>
-            Value    : {{ report.value }}<br>
-            Threshold: {{ report.threshold }}<br><br>
-    
+
+            Metric   : {{ report.metric }} ({{ report.unit }})<br>
+            Value    : {{ report.value }} {{ report.unit }}<br>
+            Threshold: {{ report.threshold }} {{ report.unit }}<br><br>
+
             Severity : {{ report.severity }}<br><br>
-    
+
             Summary:<br>
             {{ report.summary }}<br><br>
-    
+
             🔗 <a href="{{ report.link }}">Click here to view alert</a>
 
+    # 🔹 STEP 5: send ke Teams
     - name: Send alert to Teams
       uri:
         url: "{{ power_automate_webhook }}"
