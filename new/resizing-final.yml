@@ -1,0 +1,65 @@
+- hosts: localhost
+  gather_facts: false
+
+  vars:
+    project_id: "{{ project | default('') }}"
+    recommendations_input: "{{ recommendations | default([]) }}"
+
+  tasks:
+
+  #################################################################
+  # VALIDATION
+  #################################################################
+
+  - name: Validate project_id
+    fail:
+      msg: "Project ID not provided"
+    when: project_id | length == 0
+
+  - name: End play if no input
+    meta: end_play
+    when: recommendations_input | length == 0
+
+  - name: Filter valid recommendations (saving > 0)
+    set_fact:
+      valid_recommendations: >-
+        {{
+          recommendations_input
+          | selectattr('estimated_saving.amount', 'defined')
+          | selectattr('estimated_saving.amount', 'gt', 0)
+          | list
+        }}
+
+  - name: End play if no valid recommendations
+    meta: end_play
+    when: valid_recommendations | length == 0
+
+
+  #################################################################
+  # VM FLOW
+  #################################################################
+
+  - name: VM Resize Flow
+    include_tasks: tasks/vm_tasks.yml
+    loop: "{{ valid_recommendations }}"
+    loop_control:
+      loop_var: item
+    when:
+      - item.type == "vm"
+      - item.recommended is defined
+      - item.recommended | length > 0
+
+
+  #################################################################
+  # CLOUD SQL FLOW
+  #################################################################
+
+  - name: Cloud SQL Resize Flow
+    include_tasks: tasks/sql_tasks.yml
+    loop: "{{ valid_recommendations }}"
+    loop_control:
+      loop_var: item
+    when:
+      - item.type == "cloudsql"
+      - item.recommended is defined
+      - item.recommended | length > 0
