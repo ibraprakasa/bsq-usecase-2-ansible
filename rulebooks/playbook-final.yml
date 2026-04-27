@@ -22,35 +22,24 @@
       set_fact:
         value_converted: >-
           {% if 'memory' in metric_type %}
-            {{ (raw_value / 1073741824) | round(2) }}
+            {{ ((raw_value | float) / 1073741824) | round(2) }}
           {% elif 'network' in metric_type %}
-            {{ (raw_value / 1048576) | round(2) }}
+            {{ ((raw_value | float) / 1048576) | round(2) }}
           {% elif 'cpu' in metric_type %}
-            {{ (raw_value * 100) | round(2) }}
+            {{ ((raw_value | float) * 100) | round(2) }}
           {% else %}
-            {{ raw_value | round(3) }}
+            {{ (raw_value | float) | round(3) }}
           {% endif %}
-
+    
         threshold_converted: >-
           {% if 'memory' in metric_type %}
-            {{ (raw_threshold / 1073741824) | round(2) }}
+            {{ ((raw_threshold | float) / 1073741824) | round(2) }}
           {% elif 'network' in metric_type %}
-            {{ (raw_threshold / 1048576) | round(2) }}
+            {{ ((raw_threshold | float) / 1048576) | round(2) }}
           {% elif 'cpu' in metric_type %}
-            {{ (raw_threshold * 100) | round(2) }}
+            {{ ((raw_threshold | float) * 100) | round(2) }}
           {% else %}
-            {{ raw_threshold | round(3) }}
-          {% endif %}
-
-        unit: >-
-          {% if 'memory' in metric_type %}
-            GiB
-          {% elif 'network' in metric_type %}
-            MB/s
-          {% elif 'cpu' in metric_type %}
-            %
-          {% else %}
-            value
+            {{ (raw_threshold | float) | round(3) }}
           {% endif %}
 
     # 🔹 STEP 3: build report
