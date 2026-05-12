@@ -2,12 +2,28 @@
 - hosts: localhost
   gather_facts: false
 
+  vars:
+    collection_path: /runner/requirements_collections
+    collection_env: "/runner/requirements_collections:/usr/share/ansible/collections"
+
   tasks:
 
-    - name: List installed collections
-      ansible.builtin.command: ansible-galaxy collection list
-      register: collection_list
+    - name: Install VMware collection
+      ansible.builtin.command: >
+        ansible-galaxy collection install community.vmware
+        -p {{ collection_path }}
+      environment:
+        ANSIBLE_COLLECTIONS_PATH: "{{ collection_env }}"
+      register: galaxy_install
 
+    - debug:
+        var: galaxy_install.stdout_lines
+
+    - name: List collection
+      ansible.builtin.command: ansible-galaxy collection list
+      environment:
+        ANSIBLE_COLLECTIONS_PATH: "{{ collection_env }}"
+      register: collection_list
 
     - debug:
         var: collection_list.stdout_lines
