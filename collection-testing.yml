@@ -2,58 +2,12 @@
 - hosts: localhost
   gather_facts: false
 
-  vars:
-    collection_path: /tmp/collections
-    collection_env: "/tmp/collections:/usr/share/ansible/collections"
-
   tasks:
-
-    - name: Create collection directory
-      ansible.builtin.file:
-        path: "{{ collection_path }}"
-        state: directory
-
-    - name: Check python
-      ansible.builtin.command: python3 --version
-      register: py_check
-      changed_when: false
-
-    - debug:
-        var: py_check.stdout_lines
-
-    - name: Check pip
-      ansible.builtin.command: pip3 --version
-      register: pip_check
-      changed_when: false
-
-    - debug:
-        var: pip_check.stdout_lines
-
-    - name: Install VMware collection
-      ansible.builtin.command: >
-        ansible-galaxy collection install community.vmware
-        -p {{ collection_path }}
-      environment:
-        ANSIBLE_COLLECTIONS_PATHS: "{{ collection_env }}"
-      register: galaxy_install
-
-    - debug:
-        var: galaxy_install.stdout_lines
-
-    - name: Install pyvmomi
-      ansible.builtin.command: >
-        python3 -m pip install pyvmomi requests --user
-      register: pip_install
-
-    - debug:
-        var: pip_install.stdout_lines
 
     - name: List installed collections
       ansible.builtin.command: ansible-galaxy collection list
-      environment:
-        ANSIBLE_COLLECTIONS_PATHS: "{{ collection_env }}"
       register: collection_list
-      changed_when: false
+
 
     - debug:
         var: collection_list.stdout_lines
