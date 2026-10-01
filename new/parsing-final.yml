@@ -152,7 +152,9 @@
       - item.primaryImpact is defined
       - item.primaryImpact.category == "COST"
       - item.content.overview is defined
-
+      - item.content.overview.currentMachineType is defined
+      - item.content.overview.recommendedMachineType is defined
+      
     vars:
       current_machine: "{{ item.content.overview.currentMachineType.name }}"
       recommended_machine: "{{ item.content.overview.recommendedMachineType.name }}"
